@@ -7,7 +7,7 @@ const landing = 'https://www.deploys.app/'
  * @param {import('@cloudflare/workers-types').Request} request
  * @param {Env} env
  * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
- * @returns {Promise<Response>}
+ * @returns {Promise<import('@cloudflare/workers-types').Response>}
  **/
 export default async function (request, env, ctx) {
 	const url = new URL(request.url)

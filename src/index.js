@@ -16,7 +16,7 @@ export default {
 	 * @param {import('@cloudflare/workers-types').Request} request
 	 * @param {Env} env
 	 * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
-	 * @returns {Promise<Response>}
+	 * @returns {Promise<import('@cloudflare/workers-types').Response>}
 	 **/
 	async fetch (request, env, ctx) {
 		const url = new URL(request.url)
