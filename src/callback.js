@@ -1,7 +1,6 @@
 import * as cookie from 'cookie'
 import * as utils from './utils'
 import jwtDecode from 'jwt-decode'
-import { Client } from 'pg'
 
 /**
  * @param {import('@cloudflare/workers-types').Request} request
@@ -48,7 +47,7 @@ export default async function (request, env, ctx) {
 			'content-type': 'application/x-www-form-urlencoded'
 		}
 	})
-	if (resp.status > 200 || resp.status > 299) {
+	if (resp.status < 200 || resp.status > 299) {
 		return failResponse()
 	}
 	const respBody = await resp.json()
@@ -65,38 +64,15 @@ export default async function (request, env, ctx) {
 	const callback = new URL(session.callbackUrl)
 	callback.searchParams.set('state', session.callbackState)
 
-	const tk = utils.generateToken()
+	const returnCode = utils.generateCode()
+	await utils.insertOAuth2Code(env, returnCode, email)
 
-	try {
-		await insertToken(env, tk, email)
-	} catch (e) {
-		console.log('insert token error:', err)
-		return new Response('Cloudflare HyperDrive Error, please try again...', { status: 500 })
-	}
-
-	callback.searchParams.set('code', tk)
+	callback.searchParams.set('code', returnCode)
 	return Response.redirect(callback, 302)
 }
 
 function failResponse () {
 	return Response.redirect('https://www.deploys.app', 302)
-}
-
-/**
- * insertToken inserts token into database
- * @param env
- * @param {string} tk token
- * @param {string} email
- * @returns {Promise<void>}
- */
-async function insertToken (env, tk, email) {
-	const hashedToken = await utils.hash(tk)
-	const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
-	await client.connect()
-	await client.query(`
-		insert into user_tokens (token, email, expires_at)
-		values ($1, $2, now() + '7 days')
-	`, [hashedToken, email])
 }
 
 /**

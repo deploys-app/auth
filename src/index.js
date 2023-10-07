@@ -43,9 +43,8 @@ export default {
 	async scheduled (event, env, ctx) {
 		const job = env.DB
 			.prepare(`
-                delete
-                from sessions
-                where created_at > datetime(current_timestamp, '+1 hour')
+                delete from sessions
+                where current_timestamp > datetime(created_at, '+1 hour')
 			`)
 			.run()
 

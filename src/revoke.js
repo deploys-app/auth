@@ -26,7 +26,7 @@ export default async function (request, env, ctx) {
 			`, [hashedToken])
 		} catch (e) {
 			console.log('delete token error:', e)
-			return new Response('Cloudflare HyperDrive Error, please try again...', { status: 500 })
+			return new Response('Cloudflare Hyperdrive Error, please try again...', { status: 500 })
 		}
 	}
 

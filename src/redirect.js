@@ -8,16 +8,36 @@ import * as utils from './utils'
  **/
 export default async function (request, env, ctx) {
 	const url = new URL(request.url)
+
+	const clientId = url.searchParams.get('client_id')
+	if (!clientId) {
+		return new Response('Missing client_id parameter', { status: 400 })
+	}
 	const callbackState = url.searchParams.get('state')
 	if (!callbackState) {
 		return new Response('Missing state parameter', { status: 400 })
 	}
-	let callbackUrl = url.searchParams.get('callback')
+	let callbackUrl = url.searchParams.get('redirect_uri')
 	if (!callbackUrl) {
-		return new Response('Missing callback parameter', { status: 400 })
+		return new Response('Missing redirect_uri parameter', { status: 400 })
 	}
 	if (!utils.isUrl(callbackUrl)) {
-		return new Response('Invalid callback parameter', { status: 400 })
+		return new Response('Invalid redirect_uri parameter', { status: 400 })
+	}
+
+	const oauth2Client = await utils.getOAuth2Client(env, clientId)
+	if (!oauth2Client) {
+		return new Response('Invalid client_id parameter', { status: 400 })
+	}
+	const pattern = '^' + (oauth2Client.redirectUri || '')
+		.replaceAll('.', '\\.')
+		.replaceAll('/', '\\/')
+		.replaceAll('*', '.*') +
+		'$'
+
+	const re = new RegExp(pattern)
+	if (!re.test(callbackUrl)) {
+		return new Response('Invalid redirect_uri parameter', { status: 400 })
 	}
 
 	const state = utils.generateState()
