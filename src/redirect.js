@@ -1,3 +1,5 @@
+import * as utils from './utils'
+
 export default async function (request, env, ctx) {
 	const url = new URL(request.url)
 	const callbackState = url.searchParams.get('state')
@@ -8,12 +10,12 @@ export default async function (request, env, ctx) {
 	if (!callbackUrl) {
 		return new Response('Missing callback parameter', { status: 400 })
 	}
-	if (!isUrl(callbackUrl)) {
+	if (!utils.isUrl(callbackUrl)) {
 		return new Response('Invalid callback parameter', { status: 400 })
 	}
 
-	const state = generateState()
-	const sessionId = generateSessionId()
+	const state = utils.generateState()
+	const sessionId = utils.generateSessionId()
 
 	await env.DB
 		.prepare('insert into sessions (id, data) values (?1, ?2)')
@@ -41,30 +43,4 @@ export default async function (request, env, ctx) {
 		status: 302,
 		headers
 	})
-}
-
-function generateState () {
-	const state = new Uint8Array(16)
-	crypto.getRandomValues(state)
-	return Array.from(state, (x) => x.toString(16).padStart(2, '0')).join('')
-}
-
-function generateSessionId () {
-	const sessionId = new Uint8Array(32)
-	crypto.getRandomValues(sessionId)
-	return Array.from(sessionId, (x) => x.toString(16).padStart(2, '0')).join('')
-}
-
-/**
- * isUrl checks if a string is a valid URL
- * @param {string} s
- * @returns {boolean}
- */
-function isUrl (s) {
-	try {
-		const u = new URL(s)
-		return (u.protocol === 'http:' || u.protocol === 'https:') && u.host
-	} catch (e) {
-		return false
-	}
 }

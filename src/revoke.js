@@ -1,5 +1,5 @@
 import { Client } from 'pg'
-import { hash } from './token'
+import { hash } from './utils'
 
 const landing = 'https://www.deploys.app/'
 

@@ -1,5 +1,5 @@
 import * as cookie from 'cookie'
-import * as token from './token'
+import * as utils from './utils'
 import jwtDecode from 'jwt-decode'
 import { Client } from 'pg'
 
@@ -59,7 +59,7 @@ export default async function (request, env, ctx) {
 	const callback = new URL(session.callbackUrl)
 	callback.searchParams.set('state', session.callbackState)
 
-	const tk = token.generate()
+	const tk = utils.generateToken()
 
 	try {
 		await insertToken(env, tk, email)
@@ -84,7 +84,7 @@ function failResponse () {
  * @returns {Promise<void>}
  */
 async function insertToken (env, tk, email) {
-	const hashedToken = await token.hash(tk)
+	const hashedToken = await utils.hash(tk)
 	const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
 	await client.connect()
 	await client.query(`
