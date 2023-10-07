@@ -3,6 +3,12 @@ import * as utils from './utils'
 import jwtDecode from 'jwt-decode'
 import { Client } from 'pg'
 
+/**
+ * @param {import('@cloudflare/workers-types').Request} request
+ * @param {Env} env
+ * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
+ * @returns {Promise<Response>}
+ **/
 export default async function (request, env, ctx) {
 	const url = new URL(request.url)
 	const callbackState = url.searchParams.get('state')

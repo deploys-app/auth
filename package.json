@@ -1,18 +1,19 @@
 {
-	"name": "@deploys-app/auth",
-	"version": "0.0.0",
-	"private": true,
-	"scripts": {
-		"deploy": "wrangler deploy",
-		"start": "wrangler dev"
-	},
-	"devDependencies": {
-		"wrangler": "^3.0.0"
-	},
-	"dependencies": {
-		"cookie": "^0.5.0",
-		"google-auth-library": "^9.1.0",
-		"jwt-decode": "^3.1.2",
-		"pg": "^8.11.3"
-	}
+  "name": "@deploys-app/auth",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "start": "wrangler dev"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231002.0",
+    "wrangler": "^3.0.0"
+  },
+  "dependencies": {
+    "cookie": "^0.5.0",
+    "google-auth-library": "^9.1.0",
+    "jwt-decode": "^3.1.2",
+    "pg": "^8.11.3"
+  }
 }

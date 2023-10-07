@@ -3,6 +3,12 @@ import { hash } from './utils'
 
 const landing = 'https://www.deploys.app/'
 
+/**
+ * @param {import('@cloudflare/workers-types').Request} request
+ * @param {Env} env
+ * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
+ * @returns {Promise<Response>}
+ **/
 export default async function (request, env, ctx) {
 	const url = new URL(request.url)
 	const token = url.searchParams.get('token')
