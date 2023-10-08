@@ -175,6 +175,56 @@ export async function ensureUser (client, email) {
 	}
 }
 
+/**
+ * @typedef session
+ * @property {string} state
+ * @property {string} callbackState
+ * @property {string} callbackUrl
+ */
+
+/**
+ * getSession gets session data from database and delete it
+ * @param env
+ * @param {string} sessionId
+ * @returns {Promise<?session>}
+ */
+export async function getSession (env, sessionId) {
+	/** @type {string} */
+	const data = await env.DB
+		.prepare(`
+			select data
+			from sessions
+			where id = ?1
+			  and current_timestamp < datetime(created_at, '+1 hour')
+		`)
+		.bind(sessionId)
+		.first('data')
+	if (!data) {
+		return null
+	}
+
+	await env.DB
+		.prepare(`delete from sessions where id = ?1`)
+		.bind(sessionId)
+		.run()
+
+	return JSON.parse(data)
+}
+
+/**
+ * saveSession saves session data to database
+ * @param {Env} env
+ * @param {string} sessionId
+ * @param {session} data
+ * @returns {Promise<void>}
+ */
+export async function saveSession (env, sessionId, data) {
+	await env.DB
+		.prepare('insert into sessions (id, data) values (?1, ?2)')
+		.bind(sessionId, JSON.stringify(data))
+		.run()
+}
+
 function toRawURLEncoding (s) {
 	return s.replace(/=*$/, '').replace(/\+/g, '-').replace(/\//g, '_')
 }

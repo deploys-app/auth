@@ -43,14 +43,11 @@ export default async function (request, env, ctx) {
 	const state = utils.generateState()
 	const sessionId = utils.generateSessionId()
 
-	await env.DB
-		.prepare('insert into sessions (id, data) values (?1, ?2)')
-		.bind(sessionId, JSON.stringify({
-			state,
-			callbackState,
-			callbackUrl
-		}))
-		.run()
+	await utils.saveSession(env, sessionId, {
+		state,
+		callbackState,
+		callbackUrl
+	})
 
 	const headers = new Headers()
 	headers.append('set-cookie', `s=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Lax`)

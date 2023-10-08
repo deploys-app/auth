@@ -19,13 +19,14 @@ export default async function (request, env, ctx) {
 		return new Response('Missing code parameter', { status: 400 })
 	}
 
+	/** @type {Object.<string, ?string>} */
 	const cookies = cookie.parse(request.headers.get('cookie') || '')
 	const sessionId = cookies['s']
 	if (!sessionId) {
 		return new Response('Missing session', { status: 400 })
 	}
 
-	const session = await getSession(env, sessionId)
+	const session = await utils.getSession(env, sessionId)
 	if (!session) {
 		return failResponse()
 	}
@@ -73,36 +74,4 @@ export default async function (request, env, ctx) {
 
 function failResponse () {
 	return Response.redirect('https://www.deploys.app', 302)
-}
-
-/**
- * getSession gets session data from database and delete it
- * @param env
- * @param {string} sessionId
- * @returns {Promise<any|null>}
- */
-async function getSession (env, sessionId) {
-	const data = await env.DB
-		.prepare(`
-			select data
-			from sessions
-			where id = ?1
-			  and current_timestamp < datetime(created_at, '+1 hour')
-		`)
-		.bind(sessionId)
-		.first('data')
-	if (!data) {
-		return null
-	}
-
-	await env.DB
-		.prepare(`
-            delete
-            from sessions
-            where id = ?1
-		`)
-		.bind(sessionId)
-		.run()
-
-	return JSON.parse(data)
 }
