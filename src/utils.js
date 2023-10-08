@@ -100,7 +100,7 @@ export async function getOAuth2EmailFromCode (env, code) {
 			select email
 			from oauth2_codes
 			where id = ?1
-			  and created_at < datetime(current_timestamp, '+1 hour')
+			  and current_timestamp < datetime(created_at, '+1 hour')
 		`)
 		.bind(code)
 		.first()

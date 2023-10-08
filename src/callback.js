@@ -87,7 +87,7 @@ async function getSession (env, sessionId) {
 			select data
 			from sessions
 			where id = ?1
-			  and created_at < datetime(current_timestamp, '+1 hour')
+			  and current_timestamp < datetime(created_at, '+1 hour')
 		`)
 		.bind(sessionId)
 		.first('data')
