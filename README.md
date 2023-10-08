@@ -12,3 +12,7 @@ $ bun start
 ```shell
 $ bun run deploy
 ```
+
+## Diagram
+
+![Diagram](./diagram.svg)
