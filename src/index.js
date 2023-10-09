@@ -41,26 +41,18 @@ export default {
 	 * @returns {Promise<void>}
 	 */
 	async scheduled (event, env, ctx) {
-		// clear expired sessions
-		{
-			const job = env.DB
-				.prepare(`
-					delete from sessions
-					where current_timestamp > datetime(created_at, '+1 hour')
-				`)
-				.run()
-			ctx.waitUntil(job)
-		}
-
-		// clear expired oauth2 codes
-		{
-			const job = env.DB
-				.prepare(`
-					delete from oauth2_codes
-					where current_timestamp > datetime(created_at, '+1 hour')
-				`)
-				.run()
-			ctx.waitUntil(job)
-		}
+		const job = env.DB.batch([
+			// clear expired sessions
+			env.DB.prepare(`
+				delete from sessions
+				where current_timestamp > datetime(created_at, '+1 hour')
+			`),
+			// clear expired oauth2 codes
+			env.DB.prepare(`
+				delete from oauth2_codes
+				where current_timestamp > datetime(created_at, '+1 hour')
+			`)
+		])
+		ctx.waitUntil(job)
 	}
 }
