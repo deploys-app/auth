@@ -1,6 +1,6 @@
 import * as cookie from 'cookie'
 import * as utils from './utils'
-import jwtDecode from 'jwt-decode'
+import { jwtDecode } from 'jwt-decode'
 
 /**
  * @param {import('@cloudflare/workers-types').Request} request
