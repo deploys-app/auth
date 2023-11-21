@@ -19,9 +19,9 @@ export default async function (request, env, ctx) {
 		return new Response('Missing code parameter', { status: 400 })
 	}
 
-	/** @type {Object.<string, ?string>} */
+	/** @type {Record<string, ?string>} */
 	const cookies = cookie.parse(request.headers.get('cookie') || '')
-	const sessionId = cookies['s']
+	const sessionId = cookies.s
 	if (!sessionId) {
 		return new Response('Missing session', { status: 400 })
 	}

@@ -17,7 +17,7 @@ export default async function (request, env, ctx) {
 	if (!callbackState) {
 		return new Response('Missing state parameter', { status: 400 })
 	}
-	let callbackUrl = url.searchParams.get('redirect_uri')
+	const callbackUrl = url.searchParams.get('redirect_uri')
 	if (!callbackUrl) {
 		return new Response('Missing redirect_uri parameter', { status: 400 })
 	}
