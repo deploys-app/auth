@@ -1,5 +1,3 @@
-import { Client } from 'pg'
-
 export async function hash (token) {
 	const digest = await crypto.subtle.digest({ name: 'SHA-256' }, new TextEncoder().encode(token))
 	return toRawURLEncoding(btoa(String.fromCodePoint(...new Uint8Array(digest))))
@@ -58,7 +56,7 @@ export function isUrl (s) {
  */
 export async function getOAuth2Client (env, clientID) {
 	const data = await env.DB
-		.prepare(`select id, secret, redirect_uri from oauth2_clients where id = ?`)
+		.prepare('select id, secret, redirect_uri from oauth2_clients where id = ?')
 		.bind(clientID)
 		.first()
 	if (!data) {
@@ -204,7 +202,7 @@ export async function getSession (env, sessionId) {
 	}
 
 	await env.DB
-		.prepare(`delete from sessions where id = ?1`)
+		.prepare('delete from sessions where id = ?1')
 		.bind(sessionId)
 		.run()
 

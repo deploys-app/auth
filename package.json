@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "deploy": "wrangler deploy",
-    "start": "wrangler dev"
+    "start": "wrangler dev",
+    "lint": "eslint --ignore-path .gitignore ."
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20231025.0",
+    "eslint": "^8.54.0",
     "wrangler": "^3.16.0"
   },
   "dependencies": {

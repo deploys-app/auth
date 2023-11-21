@@ -3,6 +3,7 @@
 ## Development
 
 ```shell
+$ asdf install
 $ bun install
 $ bun start
 ```

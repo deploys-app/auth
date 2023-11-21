@@ -22,16 +22,16 @@ export default {
 		const url = new URL(request.url)
 
 		switch (url.pathname) {
-			case '/':
-				return redirect(request, env, ctx)
-			case '/callback':
-				return callback(request, env, ctx)
-			case '/revoke':
-				return revoke(request, env, ctx)
-			case '/token':
-				return token(request, env, ctx)
-			default:
-				return new Response('404 page not found', { status: 404 })
+		case '/':
+			return redirect(request, env, ctx)
+		case '/callback':
+			return callback(request, env, ctx)
+		case '/revoke':
+			return revoke(request, env, ctx)
+		case '/token':
+			return token(request, env, ctx)
+		default:
+			return new Response('404 page not found', { status: 404 })
 		}
 	},
 	/**

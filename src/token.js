@@ -55,7 +55,7 @@ export default async function (request, env, ctx) {
 
 	return new Response(JSON.stringify({
 		refresh_token: token,
-		token_type: 'Bearer',
+		token_type: 'Bearer'
 	}), {
 		headers: {
 			'content-type': 'application/json'
