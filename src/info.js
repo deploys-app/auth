@@ -19,10 +19,12 @@ export default async function info (request, env, ctx) {
 
 	env.WAE.writeDataPoint({
 		blobs: [
+			'info',
+			tokenInfo.clientId,
 			request.cf.colo,
 			request.cf.country
 		],
-		indexes: [ 'info', tokenInfo.clientId ]
+		indexes: [ tokenInfo.clientId ]
 	})
 
 	return new Response(JSON.stringify({

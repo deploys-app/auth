@@ -19,4 +19,4 @@ id = "a7b66b1bc1f3482383e449c7f54fc716"
 
 [[analytics_engine_datasets]]
 binding = "WAE"
-dataset = "DEPLOYS_AUTH"
+dataset = "deploys_auth"

@@ -69,10 +69,12 @@ export default async function (request, env, ctx) {
 
 	env.WAE.writeDataPoint({
 		blobs: [
+			'token',
+			oauth2Client.id,
 			request.cf.colo,
 			request.cf.country
 		],
-		indexes: [ 'token', oauth2Client.id ]
+		indexes: [ oauth2Client.id ]
 	})
 
 	return new Response(JSON.stringify({
