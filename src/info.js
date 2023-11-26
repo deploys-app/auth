@@ -7,7 +7,7 @@ import { hash } from './utils'
  * @returns {Promise<import('@cloudflare/workers-types').Response>}
  **/
 export default async function info (request, env, ctx) {
-	const token = extractAuthToken(request.headers.get('authorization'))
+	const token = extractAuthToken(request.headers.get('authorization') ?? '')
 	if (!token) {
 		return failResponse('auth: unauthorized')
 	}
@@ -31,8 +31,11 @@ export default async function info (request, env, ctx) {
  */
 function extractAuthToken (auth) {
 	const tk = auth.trim()
+	if (!tk) {
+		return ''
+	}
 	const parts = /^bearer (.+)$/i.exec(tk)
-	if (parts.length !== 2) {
+	if (parts?.length !== 2) {
 		return ''
 	}
 	return parts[1].trim()
