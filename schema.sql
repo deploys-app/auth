@@ -16,10 +16,13 @@ create table oauth2_clients (
 
 create table oauth2_codes (
 	id         text not null,
+	client_id  text not null,
 	email      text not null,
 	created_at integer default current_timestamp,
-	primary key (id)
+	primary key (id),
+	foreign key (client_id) references oauth2_clients (id) on delete cascade
 );
+create index oauth2_codes_created_at_idx on oauth2_codes (created_at);
 
 create table tokens (
 	id         text    not null,
