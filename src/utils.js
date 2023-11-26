@@ -118,12 +118,11 @@ export async function getOAuth2EmailFromCode (env, code) {
 /**
  * insertToken inserts token into hyperdrive database
  * @param {Client} client
- * @param {string} token
+ * @param {string} hashedToken
  * @param {string} email
  * @returns {Promise<void>}
  */
-export async function insertToken (client, token, email) {
-	const hashedToken = await hash(token)
+export async function insertToken (client, hashedToken, email) {
 	await client.query(`
 		insert into user_tokens (token, email, expires_at)
 		values ($1, $2, now() + '7 days')
