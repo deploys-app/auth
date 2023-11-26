@@ -34,7 +34,7 @@ export default async function (request, env, ctx) {
 		return new Response('Invalid client_secret parameter', { status: 400 })
 	}
 
-	const email = await utils.getOAuth2EmailFromCode(env, code) // TODO: add client id
+	const email = await utils.getOAuth2EmailFromCode(env, oauth2Client.id, code)
 	if (!email) {
 		return new Response('Invalid code parameter', { status: 400 })
 	}

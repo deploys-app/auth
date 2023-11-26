@@ -66,7 +66,7 @@ export default async function (request, env, ctx) {
 	callback.searchParams.set('state', session.callbackState)
 
 	const returnCode = utils.generateCode()
-	await utils.insertOAuth2Code(env, returnCode, email)
+	await utils.insertOAuth2Code(env, session.clientId, returnCode, email)
 
 	callback.searchParams.set('code', returnCode)
 	return Response.redirect(callback, 302)

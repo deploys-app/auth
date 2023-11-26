@@ -72,35 +72,38 @@ export async function getOAuth2Client (env, clientID) {
 /**
  * insertOAuth2Code inserts OAuth2 code into database
  * @param {Env} env
+ * @param {string} clientId
  * @param {string} code
  * @param {string} email
  * @returns {Promise<void>}
  */
-export async function insertOAuth2Code (env, code, email) {
+export async function insertOAuth2Code (env, clientId, code, email) {
 	await env.DB
 		.prepare(`
-			insert into oauth2_codes (id, email)
-			values (?1, ?2)
+			insert into oauth2_codes (id, client_id, email)
+			values (?1, ?2, ?3)
 		`)
-		.bind(code, email)
+		.bind(code, clientId, email)
 		.run()
 }
 
 /**
  * getOAuth2EmailFromCode gets email from OAuth2 code and delete it
  * @param {Env} env
+ * @param {string} clientId
  * @param {string} code
  * @returns {Promise<?string>}
  */
-export async function getOAuth2EmailFromCode (env, code) {
+export async function getOAuth2EmailFromCode (env, clientId, code) {
 	const data = await env.DB
 		.prepare(`
 			select email
 			from oauth2_codes
 			where id = ?1
+			  and client_id = ?2
 			  and current_timestamp < datetime(created_at, '+1 hour')
 		`)
-		.bind(code)
+		.bind(code, clientId)
 		.first()
 	if (!data) {
 		return null
@@ -109,8 +112,9 @@ export async function getOAuth2EmailFromCode (env, code) {
 		.prepare(`
 			delete from oauth2_codes
 			where id = ?1
+			  and client_id = ?2
 		`)
-		.bind(code)
+		.bind(code, clientId)
 		.run()
 	return data.email
 }
@@ -174,6 +178,7 @@ export async function ensureUser (client, email) {
 
 /**
  * @typedef session
+ * @property {string} clientId
  * @property {string} state
  * @property {string} callbackState
  * @property {string} callbackUrl

@@ -44,6 +44,7 @@ export default async function (request, env, ctx) {
 	const sessionId = utils.generateSessionId()
 
 	await utils.saveSession(env, sessionId, {
+		clientId: oauth2Client.id,
 		state,
 		callbackState,
 		callbackUrl
