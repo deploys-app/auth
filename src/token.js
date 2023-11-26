@@ -74,7 +74,7 @@ export default async function (request, env, ctx) {
 			request.cf.colo,
 			request.cf.country
 		],
-		indexes: [ oauth2Client.id ]
+		indexes: [oauth2Client.id]
 	})
 
 	return new Response(JSON.stringify({

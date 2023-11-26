@@ -24,7 +24,7 @@ export default async function info (request, env, ctx) {
 			request.cf.colo,
 			request.cf.country
 		],
-		indexes: [ tokenInfo.clientId ]
+		indexes: [tokenInfo.clientId]
 	})
 
 	return new Response(JSON.stringify({
