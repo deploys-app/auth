@@ -40,10 +40,24 @@ export default async function (request, env, ctx) {
 	}
 
 	const token = utils.generateToken()
+	const hashedToken = await utils.hash(token)
+	try {
+		await env.DB
+			.prepare(`
+				insert into tokens (id, email, expires_at)
+				values (?1, ?2, datetime(current_timestamp, '+7 days'))
+			`)
+			.bind(hashedToken, email)
+			.run()
+	} catch (e) {
+		console.log('insert token d1 error:', e)
+		return new Response('Cloudflare D1 Error, please try again...', { status: 500 })
+	}
+
 	try {
 		const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
 		await client.connect()
-		await utils.insertToken(client, token, email)
+		await utils.insertToken(client, hashedToken, email)
 		await utils.ensureUser(client, email)
 	} catch (e) {
 		if (e.message === 'user inactive') {

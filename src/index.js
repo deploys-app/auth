@@ -2,6 +2,7 @@ import redirect from './redirect'
 import callback from './callback'
 import revoke from './revoke'
 import token from './token'
+import info from './info'
 
 /**
  * @typedef Env
@@ -22,6 +23,8 @@ export default {
 		const url = new URL(request.url)
 
 		switch (url.pathname) {
+		case '/info':
+			return info(request, env, ctx)
 		case '/':
 			return redirect(request, env, ctx)
 		case '/callback':
@@ -51,6 +54,11 @@ export default {
 			env.DB.prepare(`
 				delete from oauth2_codes
 				where current_timestamp > datetime(created_at, '+1 hour')
+			`),
+			// delete expired tokens
+			env.DB.prepare(`
+				delete from tokens
+				where current_timestamp > expires_at
 			`)
 		])
 		ctx.waitUntil(job)
