@@ -16,3 +16,7 @@ database_id = "65fbdd15-b212-414f-8c4b-339108469ee3"
 [[hyperdrive]]
 binding = "HYPERDRIVE"
 id = "a7b66b1bc1f3482383e449c7f54fc716"
+
+[[analytics_engine_datasets]]
+binding = "WAE"
+dataset = "deploys_auth"

@@ -16,6 +16,17 @@ export default async function info (request, env, ctx) {
 	if (!tokenInfo) {
 		return failResponse('auth: unauthorized')
 	}
+
+	env.WAE.writeDataPoint({
+		blobs: [
+			'info',
+			tokenInfo.clientId,
+			request.cf.colo,
+			request.cf.country
+		],
+		indexes: [tokenInfo.clientId]
+	})
+
 	return new Response(JSON.stringify({
 		ok: true,
 		result: tokenInfo

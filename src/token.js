@@ -67,6 +67,16 @@ export default async function (request, env, ctx) {
 		return new Response('Cloudflare Hyperdrive Error, please try again...', { status: 500 })
 	}
 
+	env.WAE.writeDataPoint({
+		blobs: [
+			'token',
+			oauth2Client.id,
+			request.cf.colo,
+			request.cf.country
+		],
+		indexes: [oauth2Client.id]
+	})
+
 	return new Response(JSON.stringify({
 		refresh_token: token,
 		token_type: 'Bearer'
