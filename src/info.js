@@ -12,15 +12,13 @@ export default async function info (request, env, ctx) {
 		return failResponse('auth: unauthorized')
 	}
 	const hashedToken = await hash(token)
-	const email = await getEmailFromToken(env, hashedToken)
-	if (!email) {
+	const tokenInfo = await getTokenInfo(env, hashedToken)
+	if (!tokenInfo) {
 		return failResponse('auth: unauthorized')
 	}
 	return new Response(JSON.stringify({
 		ok: true,
-		result: {
-			email
-		}
+		result: tokenInfo
 	}))
 }
 
@@ -51,19 +49,31 @@ function failResponse (error) {
 }
 
 /**
- * getEmailFromToken gets the email from the token.
+ * @typedef TokenInfo
+ * @property {string} email
+ * @property {string} clientId
+ */
+
+/**
+ * getTokenInfo gets the tokenInfo from the hashed token.
  * @param {Env} env
  * @param {string} hashedToken
- * @returns {Promise<?string>}
+ * @returns {Promise<?TokenInfo>}
  */
-async function getEmailFromToken (env, hashedToken) {
+async function getTokenInfo (env, hashedToken) {
 	const r = await env.DB
 		.prepare(`
-			select email
+			select email, client_id
 			from tokens
 			where id = ?1 and expires_at > current_timestamp
 		`)
 		.bind(hashedToken)
 		.first()
-	return r?.email
+	if (!r) {
+		return null
+	}
+	return {
+		email: r.email,
+		clientId: r.client_id
+	}
 }

@@ -34,7 +34,7 @@ export default async function (request, env, ctx) {
 		return new Response('Invalid client_secret parameter', { status: 400 })
 	}
 
-	const email = await utils.getOAuth2EmailFromCode(env, code)
+	const email = await utils.getOAuth2EmailFromCode(env, code) // TODO: add client id
 	if (!email) {
 		return new Response('Invalid code parameter', { status: 400 })
 	}
@@ -44,10 +44,10 @@ export default async function (request, env, ctx) {
 	try {
 		await env.DB
 			.prepare(`
-				insert into tokens (id, email, expires_at)
-				values (?1, ?2, datetime(current_timestamp, '+7 days'))
+				insert into tokens (id, email, client_id, expires_at)
+				values (?1, ?2, ?3, datetime(current_timestamp, '+7 days'))
 			`)
-			.bind(hashedToken, email)
+			.bind(hashedToken, email, oauth2Client.id)
 			.run()
 	} catch (e) {
 		console.log('insert token d1 error:', e)
