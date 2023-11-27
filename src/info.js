@@ -12,6 +12,8 @@ export default async function info (request, env, ctx) {
 		return failResponse('auth: unauthorized')
 	}
 
+	const start = Date.now()
+
 	/** @type {?TokenInfo} */
 	let tokenInfo = null
 
@@ -26,6 +28,8 @@ export default async function info (request, env, ctx) {
 		return failResponse('auth: unauthorized')
 	}
 
+	const duration = Date.now() - start
+
 	env.WAE.writeDataPoint({
 		blobs: [
 			'info',
@@ -33,6 +37,7 @@ export default async function info (request, env, ctx) {
 			request.cf.colo,
 			request.cf.country
 		],
+		doubles: [duration],
 		indexes: [tokenInfo.clientId]
 	})
 
