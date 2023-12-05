@@ -18,10 +18,20 @@ export default async function (request, env, ctx) {
 		const hashedToken = await hash(token)
 
 		try {
-			await env.AUTH_TOKENS.delete(hashedToken)
+			await Promise.all([
+				env.DB
+					.prepare(`
+						delete from tokens
+						where id = ?1
+					`)
+					.bind(hashedToken)
+					.run(),
+				env.AUTH_TOKENS
+					.delete(hashedToken)
+			])
 		} catch (e) {
-			console.log('delete token error:', e)
-			return new Response('Cloudflare KV Error, please try again...', { status: 500 })
+			console.log('delete token d1 error:', e)
+			return new Response('Cloudflare D1 Error, please try again...', { status: 500 })
 		}
 
 		// TODO: deprecated store token in hyperdrive

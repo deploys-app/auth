@@ -17,7 +17,7 @@ Browser -> Server: request /callback
 Server -> Auth: exchange token
 Auth -> D1: get exchange code
 Auth -> Auth: generate token
-Auth -> KV: store hash(token)
+Auth -> Hyperdrive: store hash(token)
 Auth -> Server: token
 Server -> Browser: redirect to authenticated page with token
 @enduml
