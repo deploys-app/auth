@@ -18,17 +18,13 @@ export default async function (request, env, ctx) {
 		const hashedToken = await hash(token)
 
 		try {
-			await Promise.all([
-				env.DB
-					.prepare(`
-						delete from tokens
-						where id = ?1
-					`)
-					.bind(hashedToken)
-					.run(),
-				env.AUTH_TOKENS
-					.delete(hashedToken)
-			])
+			await env.DB
+				.prepare(`
+					delete from tokens
+					where id = ?1
+				`)
+				.bind(hashedToken)
+				.run()
 		} catch (e) {
 			console.log('delete token d1 error:', e)
 			return new Response('Cloudflare D1 Error, please try again...', { status: 500 })
