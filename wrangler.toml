@@ -20,3 +20,7 @@ id = "a7b66b1bc1f3482383e449c7f54fc716"
 [[analytics_engine_datasets]]
 binding = "WAE"
 dataset = "deploys_auth"
+
+[[kv_namespaces]]
+binding = "AUTH_TOKENS"
+id = "7918184541764493afae52be54ea41ed"

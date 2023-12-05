@@ -8,6 +8,7 @@ import info from './info'
  * @typedef Env
  * @property {import('@cloudflare/workers-types').D1Database} DB
  * @property {import('@cloudflare/workers-types').Hyperdrive} HYPERDRIVE
+ * @property {import('@cloudflare/workers-types').KVNamespace} AUTH_TOKENS
  * @property {import('@cloudflare/workers-types').AnalyticsEngineDataset} WAE
  * @property {string} OAUTH2_CLIENT_ID
  * @property {string} OAUTH2_CLIENT_SECRET

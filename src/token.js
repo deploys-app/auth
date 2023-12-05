@@ -42,15 +42,23 @@ export default async function (request, env, ctx) {
 	const token = utils.generateToken()
 	const hashedToken = await utils.hash(token)
 	try {
-		await env.DB
-			.prepare(`
-				insert into tokens (id, email, client_id, expires_at)
-				values (?1, ?2, ?3, datetime(current_timestamp, '+7 days'))
-			`)
-			.bind(hashedToken, email, oauth2Client.id)
-			.run()
+		await Promise.all([
+			env.DB
+				.prepare(`
+					insert into tokens (id, email, client_id, expires_at)
+					values (?1, ?2, ?3, datetime(current_timestamp, '+7 days'))
+				`)
+				.bind(hashedToken, email, oauth2Client.id)
+				.run(),
+			env.AUTH_TOKENS
+				.put(hashedToken, JSON.stringify({
+					email,
+					clientId: oauth2Client.id,
+					expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000)
+				}))
+		])
 	} catch (e) {
-		console.log('insert token d1 error:', e)
+		console.log('insert token error:', e)
 		return new Response('Cloudflare D1 Error, please try again...', { status: 500 })
 	}
 
