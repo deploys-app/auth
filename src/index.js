@@ -56,11 +56,6 @@ export default {
 			env.DB.prepare(`
 				delete from oauth2_codes
 				where current_timestamp > datetime(created_at, '+1 hour')
-			`),
-			// delete expired tokens
-			env.DB.prepare(`
-				delete from tokens
-				where current_timestamp > expires_at
 			`)
 		])
 		ctx.waitUntil(job)

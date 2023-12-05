@@ -1,6 +1,8 @@
 import { Client } from 'pg'
 import * as utils from './utils'
 
+const tokenDuration = 7 * 24 * 60 * 60
+
 /**
  * @param {import('@cloudflare/workers-types').Request} request
  * @param {Env} env
@@ -42,31 +44,21 @@ export default async function (request, env, ctx) {
 	const token = utils.generateToken()
 	const hashedToken = await utils.hash(token)
 	try {
-		const tokenDuration = 7 * 24 * 60 * 60
-		await Promise.all([
-			env.DB
-				.prepare(`
-					insert into tokens (id, email, client_id, expires_at)
-					values (?1, ?2, ?3, datetime(current_timestamp, '+7 days'))
-				`)
-				.bind(hashedToken, email, oauth2Client.id)
-				.run(),
-			env.AUTH_TOKENS
-				.put(
-					hashedToken,
-					JSON.stringify({
-						email,
-						clientId: oauth2Client.id,
-						expiresAt: Math.floor(Date.now() / 1000) + tokenDuration
-					}),
-					{
-						expirationTtl: tokenDuration
-					}
-				)
-		])
+		await env.AUTH_TOKENS
+			.put(
+				hashedToken,
+				JSON.stringify({
+					email,
+					clientId: oauth2Client.id,
+					expiresAt: Math.floor(Date.now() / 1000) + tokenDuration
+				}),
+				{
+					expirationTtl: tokenDuration
+				}
+			)
 	} catch (e) {
 		console.log('insert token error:', e)
-		return new Response('Cloudflare D1 Error, please try again...', { status: 500 })
+		return new Response('Cloudflare KV Error, please try again...', { status: 500 })
 	}
 
 	try {
