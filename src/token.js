@@ -51,11 +51,17 @@ export default async function (request, env, ctx) {
 				.bind(hashedToken, email, oauth2Client.id)
 				.run(),
 			env.AUTH_TOKENS
-				.put(hashedToken, JSON.stringify({
-					email,
-					clientId: oauth2Client.id,
-					expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000)
-				}))
+				.put(
+					hashedToken,
+					JSON.stringify({
+						email,
+						clientId: oauth2Client.id,
+						expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000)
+					}),
+					{
+						expirationTtl: 7 * 24 * 60 * 60
+					}
+				)
 		])
 	} catch (e) {
 		console.log('insert token error:', e)
