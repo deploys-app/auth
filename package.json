@@ -9,8 +9,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20231121.0",
-    "eslint": "^8.54.0",
-    "wrangler": "^3.17.1"
+    "eslint": "^8.55.0",
+    "wrangler": "^3.18.0"
   },
   "dependencies": {
     "cookie": "^0.6.0",
