@@ -2,7 +2,6 @@ import redirect from './redirect'
 import callback from './callback'
 import revoke from './revoke'
 import token from './token'
-import info from './info'
 
 /**
  * @typedef Env
@@ -25,8 +24,6 @@ export default {
 		const url = new URL(request.url)
 
 		switch (url.pathname) {
-		case '/info':
-			return info(request, env, ctx)
 		case '/':
 			return redirect(request, env, ctx)
 		case '/callback':
