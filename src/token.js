@@ -42,6 +42,7 @@ export default async function (request, env, ctx) {
 	const token = utils.generateToken()
 	const hashedToken = await utils.hash(token)
 	try {
+		const tokenDuration = 7 * 24 * 60 * 60
 		await Promise.all([
 			env.DB
 				.prepare(`
@@ -56,10 +57,10 @@ export default async function (request, env, ctx) {
 					JSON.stringify({
 						email,
 						clientId: oauth2Client.id,
-						expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000)
+						expiresAt: Math.floor(Date.now() / 1000) + tokenDuration
 					}),
 					{
-						expirationTtl: 7 * 24 * 60 * 60
+						expirationTtl: tokenDuration
 					}
 				)
 		])
