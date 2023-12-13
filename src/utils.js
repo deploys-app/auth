@@ -144,36 +144,7 @@ export async function ensureUser (client, email) {
 		insert into users (email, name)
 		values ($1, '')
 		on conflict (email) do nothing
-		returning id, active
 	`, [email])
-	let res = await client.query(`
-		select id, active
-		from users
-		where email = $1
-	`, [email])
-	const user = res?.rows[0] || {}
-	if (!user.active) {
-		throw new Error('user inactive')
-	}
-
-	try {
-		res = await client.query(`
-			select exists(
-				select 1
-				from billing_accounts
-				where owner = $1
-			)
-		`, [user.id])
-		const hasBillingAccount = res?.rows[0]?.exists
-		if (!hasBillingAccount) {
-			await client.query(`
-				insert into billing_accounts (owner, name)
-				values ($1, 'My Billing Account')
-			`, [user.id])
-		}
-	} catch (e) { // ignore error
-		console.log('ensure billing account error:', e)
-	}
 }
 
 /**

@@ -42,27 +42,22 @@ export default async function (request, env, ctx) {
 	const token = utils.generateToken()
 	const hashedToken = await utils.hash(token)
 	try {
-		await env.DB
-			.prepare(`
-				insert into tokens (id, email, client_id, expires_at)
-				values (?1, ?2, ?3, datetime(current_timestamp, '+7 days'))
-			`)
-			.bind(hashedToken, email, oauth2Client.id)
-			.run()
+		await Promise.all([
+			env.DB
+				.prepare(`
+					insert into tokens (id, email, client_id, expires_at)
+					values (?1, ?2, ?3, datetime(current_timestamp, '+7 days'))
+				`)
+				.bind(hashedToken, email, oauth2Client.id)
+				.run(),
+			(async () => {
+				const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
+				await client.connect()
+				await utils.insertToken(client, hashedToken, email)
+				ctx.waitUntil(utils.ensureUser(client, email))
+			})()
+		])
 	} catch (e) {
-		console.log('insert token error:', e)
-		return new Response('Cloudflare D1 Error, please try again...', { status: 500 })
-	}
-
-	try {
-		const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
-		await client.connect()
-		await utils.insertToken(client, hashedToken, email)
-		await utils.ensureUser(client, email)
-	} catch (e) {
-		if (e.message === 'user inactive') {
-			return new Response('user not active, please contact admin', { status: 403 })
-		}
 		console.log('insert token error:', e)
 		return new Response('Cloudflare Hyperdrive Error, please try again...', { status: 500 })
 	}
