@@ -54,7 +54,6 @@ export default async function (request, env, ctx) {
 				const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
 				await client.connect()
 				await utils.insertToken(client, hashedToken, email)
-				ctx.waitUntil(utils.ensureUser(client, email))
 			})()
 		])
 	} catch (e) {

@@ -134,20 +134,6 @@ export async function insertToken (client, hashedToken, email) {
 }
 
 /**
- * ensureUser ensures user exists in hyperdrive database
- * @param client
- * @param email
- * @returns {Promise<void>}
- */
-export async function ensureUser (client, email) {
-	await client.query(`
-		insert into users (email, name)
-		values ($1, '')
-		on conflict (email) do nothing
-	`, [email])
-}
-
-/**
  * @typedef session
  * @property {string} clientId
  * @property {string} state
