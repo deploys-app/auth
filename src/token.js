@@ -42,23 +42,12 @@ export default async function (request, env, ctx) {
 	const token = utils.generateToken()
 	const hashedToken = await utils.hash(token)
 	try {
-		await Promise.all([
-			env.DB
-				.prepare(`
-					insert into tokens (id, email, client_id, expires_at)
-					values (?1, ?2, ?3, datetime(current_timestamp, '+7 days'))
-				`)
-				.bind(hashedToken, email, oauth2Client.id)
-				.run(),
-			(async () => {
-				const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
-				await client.connect()
-				await utils.insertToken(client, hashedToken, email)
-			})()
-		])
+		const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
+		await client.connect()
+		await utils.insertToken(client, hashedToken, email)
 	} catch (e) {
 		console.log('insert token error:', e)
-		return new Response('Cloudflare Hyperdrive Error, please try again...', { status: 500 })
+		return new Response('Database Error, please try again...', { status: 500 })
 	}
 
 	env.WAE.writeDataPoint({

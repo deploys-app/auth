@@ -18,17 +18,9 @@ export default async function (request, env, ctx) {
 		const hashedToken = await hash(token)
 
 		try {
-			await Promise.all([
-				env.DB
-					.prepare('delete from tokens where id = ?1')
-					.bind(hashedToken)
-					.run(),
-				(async () => {
-					const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
-					await client.connect()
-					await client.query('delete from user_tokens where token = $1', [hashedToken])
-				})()
-			])
+			const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
+			await client.connect()
+			await client.query('delete from user_tokens where token = $1', [hashedToken])
 		} catch (e) {
 			console.log('delete token error:', e)
 			return new Response('Database error, please try again...', { status: 500 })
