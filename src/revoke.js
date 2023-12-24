@@ -1,5 +1,5 @@
 import { Client } from 'pg'
-import { hash } from './utils'
+import { hash, trackLatency } from './utils'
 
 const landing = 'https://www.deploys.app/'
 
@@ -20,7 +20,8 @@ export default async function (request, env, ctx) {
 		try {
 			const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
 			await client.connect()
-			await client.query('delete from user_tokens where token = $1', [hashedToken])
+			await trackLatency(request, env, 'delete_token', () =>
+				client.query('delete from user_tokens where token = $1', [hashedToken]))
 		} catch (e) {
 			console.log('delete token error:', e)
 			return new Response('Database error, please try again...', { status: 500 })

@@ -43,8 +43,7 @@ export default async function (request, env, ctx) {
 	const hashedToken = await utils.hash(token)
 	try {
 		const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
-		await utils.trackLatency(request, env, 'connect', () =>
-			client.connect())
+		await client.connect()
 		await utils.trackLatency(request, env, 'insert_token', () =>
 			utils.insertToken(client, hashedToken, email))
 	} catch (e) {
