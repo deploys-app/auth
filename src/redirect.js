@@ -25,7 +25,7 @@ export default async function (request, env, ctx) {
 		return new Response('Invalid redirect_uri parameter', { status: 400 })
 	}
 
-	const oauth2Client = await utils.getOAuth2Client(env, clientId)
+	const oauth2Client = await utils.getOAuth2Client(env, ctx, clientId)
 	if (!oauth2Client) {
 		return new Response('Invalid client_id parameter', { status: 400 })
 	}

@@ -26,7 +26,7 @@ export default async function (request, env, ctx) {
 		return new Response('Missing code parameter', { status: 400 })
 	}
 
-	const oauth2Client = await utils.getOAuth2Client(env, clientId)
+	const oauth2Client = await utils.getOAuth2Client(env, ctx, clientId)
 	if (!oauth2Client) {
 		return new Response('Invalid client_id parameter', { status: 400 })
 	}
@@ -34,7 +34,7 @@ export default async function (request, env, ctx) {
 		return new Response('Invalid client_secret parameter', { status: 400 })
 	}
 
-	const email = await utils.getOAuth2EmailFromCode(env, oauth2Client.id, code)
+	const email = await utils.getOAuth2EmailFromCode(request, env, oauth2Client.id, code)
 	if (!email) {
 		return new Response('Invalid code parameter', { status: 400 })
 	}
@@ -43,8 +43,10 @@ export default async function (request, env, ctx) {
 	const hashedToken = await utils.hash(token)
 	try {
 		const client = new Client({ connectionString: env.HYPERDRIVE.connectionString })
-		await client.connect()
-		await utils.insertToken(client, hashedToken, email)
+		await utils.trackLatency(request, env, 'connect', () =>
+			client.connect())
+		await utils.trackLatency(request, env, 'insert_token', () =>
+			utils.insertToken(client, hashedToken, email))
 	} catch (e) {
 		console.log('insert token error:', e)
 		return new Response('Database Error, please try again...', { status: 500 })

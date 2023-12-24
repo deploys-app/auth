@@ -49,12 +49,56 @@ export function isUrl (s) {
  */
 
 /**
- * getOAuth2Client gets OAuth2 client from database
+ * getOAuth2Client gets OAuth2 client from cache or database
  * @param {Env} env
- * @param clientID
+ * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
+ * @param {string} clientID
  * @returns {Promise<OAuth2Client>}
  */
-export async function getOAuth2Client (env, clientID) {
+export async function getOAuth2Client (env, ctx, clientID) {
+	const cache = caches.default
+	const cacheKey = `deploys--auth|oauth2_client|${clientID}`
+	const cacheReq = new Request('https://auth.deploys.app/__cache/oauth2_client', {
+		cf: {
+			cacheTtl: 3600,
+			cacheKey,
+			cacheTags: ['deploys--auth|oauth2_client']
+		}
+	})
+	const resp = await cache.match(cacheReq)
+	if (resp) {
+		return resp.json()
+	}
+
+	// cache miss
+	const data = await getOAuth2ClientFromDB(env, clientID)
+	if (!data) {
+		ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(data), {
+			headers: {
+				'content-type': 'application/json',
+				'cache-control': 'public, max-age=30'
+			}
+		})))
+		return null
+	}
+
+	ctx.waitUntil(cache.put(cacheReq, new Response(JSON.stringify(data), {
+		headers: {
+			'content-type': 'application/json',
+			'cache-control': 'public, max-age=3600'
+		}
+	})))
+
+	return data
+}
+
+/**
+ * getOAuth2ClientFromDB gets OAuth2 client from database
+ * @param {Env} env
+ * @param {string} clientID
+ * @returns {Promise<OAuth2Client>}
+ */
+export async function getOAuth2ClientFromDB (env, clientID) {
 	const data = await env.DB
 		.prepare('select id, secret, redirect_uri from oauth2_clients where id = ?')
 		.bind(clientID)
@@ -89,33 +133,27 @@ export async function insertOAuth2Code (env, clientId, code, email) {
 
 /**
  * getOAuth2EmailFromCode gets email from OAuth2 code and delete it
+ * @param {import('@cloudflare/workers-types').Request} request
  * @param {Env} env
  * @param {string} clientId
  * @param {string} code
  * @returns {Promise<?string>}
  */
-export async function getOAuth2EmailFromCode (env, clientId, code) {
-	const data = await env.DB
-		.prepare(`
-			select email
-			from oauth2_codes
-			where id = ?1
-			  and client_id = ?2
-			  and current_timestamp < datetime(created_at, '+1 hour')
-		`)
-		.bind(code, clientId)
-		.first()
-	if (!data) {
-		return null
-	}
-	await env.DB
-		.prepare(`
+export async function getOAuth2EmailFromCode (request, env, clientId, code) {
+	const data = await trackLatency(request, env, 'get_oauth2_email_from_code', () =>
+		env.DB
+			.prepare(`
 			delete from oauth2_codes
 			where id = ?1
 			  and client_id = ?2
+			  and current_timestamp < datetime(created_at, '+1 hour')
+			returning email
 		`)
-		.bind(code, clientId)
-		.run()
+			.bind(code, clientId)
+			.first())
+	if (!data) {
+		return null
+	}
 	return data.email
 }
 
@@ -186,4 +224,33 @@ export async function saveSession (env, sessionId, data) {
 
 function toRawURLEncoding (s) {
 	return s.replace(/=*$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+/**
+ * @template T
+ * @typedef {T | Promise<T>} MaybePromise
+ */
+
+/**
+ * trackLatency tracks latency of a function
+ * @template T
+ * @param {import('@cloudflare/workers-types').Request} request
+ * @param {Env} env
+ * @param {string} name
+ * @param {() => MaybePromise<T>} f
+ * @returns {Promise<T>}
+ */
+export async function trackLatency (request, env, name, f) {
+	const start = Date.now()
+	const res = await f()
+	env.WAE.writeDataPoint({
+		blobs: [
+			'latency',
+			name,
+			request.cf.colo
+		],
+		doubles: [Date.now() - start],
+		indexes: ['latency']
+	})
+	return res
 }
