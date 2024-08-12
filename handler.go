@@ -43,8 +43,12 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	oauth2Client, err := getOAuth2Client(ctx, clientID)
-	if err != nil {
+	if errors.Is(err, ErrOAuth2ClientNotFound) {
 		http.Error(w, "Invalid client_id parameter", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	pattern := oauth2Client.RedirectURI
