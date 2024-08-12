@@ -56,9 +56,9 @@ func insertOAuth2Code(ctx context.Context, clientID, code, email string) error {
 func getOAuth2EmailFromCode(ctx context.Context, clientID, code string) (string, error) {
 	var email string
 	err := pgctx.QueryRow(ctx, `
-		select email
-		from oauth2_codes
+		delete from oauth2_codes
 		where id = $1 and client_id = $2 and now() < created_at + interval '1 hour'
+		returning email
 	`, code, clientID).Scan(&email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrOAuth2CodeNotFound
