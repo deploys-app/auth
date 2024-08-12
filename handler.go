@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -44,10 +45,12 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	oauth2Client, err := getOAuth2Client(ctx, clientID)
 	if errors.Is(err, ErrOAuth2ClientNotFound) {
+		slog.WarnContext(ctx, "redirect: invalid client_id", "client_id", clientID)
 		http.Error(w, "Invalid client_id parameter", http.StatusBadRequest)
 		return
 	}
 	if err != nil {
+		slog.ErrorContext(ctx, "redirect: get oauth2 client", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -57,6 +60,7 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pattern = strings.ReplaceAll(pattern, "*", `.*`)
 	re := regexp.MustCompile(`^` + pattern + `$`)
 	if !re.MatchString(callbackURL) {
+		slog.WarnContext(ctx, "redirect: invalid redirect_uri", "client_id", clientID, "redirect_uri", callbackURL)
 		http.Error(w, "Invalid redirect_uri parameter", http.StatusBadRequest)
 		return
 	}
@@ -71,6 +75,7 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CallbackURL:   callbackURL,
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "redirect: save session", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -142,10 +147,12 @@ func (h CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		slog.ErrorContext(ctx, "callback: get session", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	if session.State != state {
+		slog.WarnContext(ctx, "callback: mismatch state", "state", state, "session_state", session.State)
 		http.Error(w, "Mismatch state", http.StatusBadRequest)
 		return
 	}
@@ -160,6 +167,7 @@ func (h CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := http.Post("https://oauth2.googleapis.com/token", "application/x-www-form-urlencoded", strings.NewReader(params.Encode()))
 	if err != nil {
+		slog.WarnContext(ctx, "callback: exchange token", "error", err)
 		failResponse(w, r)
 		return
 	}
@@ -173,6 +181,7 @@ func (h CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		err = json.NewDecoder(resp.Body).Decode(&respBody)
 		if err != nil {
+			slog.ErrorContext(ctx, "callback: decode google response", "error", err)
 			failResponse(w, r)
 			return
 		}
@@ -180,6 +189,7 @@ func (h CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	email, err := extractEmailFromIDToken(idToken)
 	if err != nil {
+		slog.ErrorContext(ctx, "callback: extract id token", "error", err)
 		failResponse(w, r)
 		return
 	}
@@ -187,12 +197,14 @@ func (h CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	returnCode := generateCode()
 	err = insertOAuth2Code(ctx, session.ClientID, code, email)
 	if err != nil {
+		slog.ErrorContext(ctx, "callback: insert oauth2 code", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	callback, err := url.Parse(session.CallbackURL)
 	if err != nil {
+		slog.ErrorContext(ctx, "callback: parse callback url", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -212,6 +224,7 @@ func failResponse(w http.ResponseWriter, r *http.Request) {
 func extractEmailFromIDToken(idToken string) (string, error) {
 	parts := strings.Split(idToken, ".")
 	if len(parts) != 3 {
+		slog.Error("invalid id_token", "id_token", idToken)
 		return "", errors.New("invalid id_token")
 	}
 	payload, err := base64.RawStdEncoding.DecodeString(parts[1])
@@ -246,6 +259,7 @@ func (RevokeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hashedToken := hashToken(token)
 	_, err := pgctx.Exec(ctx, `delete from user_tokens where token = $1`, hashedToken)
 	if err != nil {
+		slog.ErrorContext(ctx, "revoke: delete token", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -273,6 +287,7 @@ func (RevokePostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hashedToken := hashToken(token)
 	_, err = pgctx.Exec(ctx, `delete from user_tokens where token = $1`, hashedToken)
 	if err != nil {
+		slog.ErrorContext(ctx, "revoke: delete token", "error", err)
 		apiErrorResponse(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -315,10 +330,12 @@ func (TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	email, err := getOAuth2EmailFromCode(ctx, clientID, code)
 	if errors.Is(err, ErrOAuth2CodeNotFound) {
+		slog.WarnContext(ctx, "token: invalid code", "client_id", clientID, "code", code)
 		http.Error(w, "Invalid code parameter", http.StatusBadRequest)
 		return
 	}
 	if err != nil {
+		slog.ErrorContext(ctx, "token: get oauth2 email from code", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -327,6 +344,7 @@ func (TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hashedToken := hashToken(token)
 	err = insertToken(ctx, hashedToken, email)
 	if err != nil {
+		slog.ErrorContext(ctx, "token: insert token", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
