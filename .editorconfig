@@ -11,8 +11,3 @@ insert_final_newline = true
 [*.{yml,yaml}]
 indent_style = space
 indent_size = 2
-
-[package.json]
-indent_style = space
-indent_size = 2
-
