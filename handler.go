@@ -195,7 +195,7 @@ func (h CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	returnCode := generateCode()
-	err = insertOAuth2Code(ctx, session.ClientID, code, email)
+	err = insertOAuth2Code(ctx, session.ClientID, returnCode, email)
 	if err != nil {
 		slog.ErrorContext(ctx, "callback: insert oauth2 code", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
