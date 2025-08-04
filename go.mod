@@ -1,6 +1,6 @@
 module github.com/deploys-app/auth
 
-go 1.22.6
+go 1.24.5
 
 require (
 	github.com/acoshift/pgsql v0.15.3
