@@ -7,8 +7,6 @@ import (
 
 	"github.com/acoshift/pgsql/pgctx"
 	_ "github.com/lib/pq"
-
-	"github.com/deploys-app/auth"
 )
 
 func main() {
@@ -33,14 +31,14 @@ func main() {
 	defer db.Close()
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /", auth.RedirectHandler{OAuth2ClientID: oauth2ClientID})
-	mux.Handle("GET /callback", auth.CallbackHandler{
+	mux.Handle("GET /", RedirectHandler{OAuth2ClientID: oauth2ClientID})
+	mux.Handle("GET /callback", CallbackHandler{
 		OAuth2ClientID:     oauth2ClientID,
 		OAuth2ClientSecret: oauth2ClientSecret,
 	})
-	mux.Handle("GET /revoke", auth.RevokeHandler{}) // TODO: remove ?
-	mux.Handle("POST /revoke", auth.RevokePostHandler{})
-	mux.Handle("POST /token", auth.TokenHandler{})
+	mux.Handle("GET /revoke", RevokeHandler{}) // TODO: remove ?
+	mux.Handle("POST /revoke", RevokePostHandler{})
+	mux.Handle("POST /token", TokenHandler{})
 
 	http.ListenAndServe(":"+port, pgctx.Middleware(db)(mux))
 }

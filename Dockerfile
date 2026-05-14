@@ -10,7 +10,7 @@ RUN asdf install
 ADD go.mod go.sum ./
 RUN go mod download
 ADD . .
-RUN go build -o .build/auth -ldflags "-w -s" ./cmd/auth
+RUN go build -o .build/auth -ldflags "-w -s" .
 
 FROM gcr.io/distroless/static
 

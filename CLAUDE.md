@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run
 
 ```bash
-go build -o auth ./cmd/auth   # build binary
+go build -o auth .             # build binary
 go vet ./...                   # lint
 ```
 
@@ -26,7 +26,7 @@ This is a minimal OAuth2 authentication service for Deploys.app. It acts as an O
 
 ### Entry point
 
-`cmd/auth/main.go` reads env vars, opens a PostgreSQL connection, registers handlers on a `http.ServeMux`, wraps it with `pgctx.Middleware` (binds the DB to each request context), and calls `http.ListenAndServe`.
+`main.go` reads env vars, opens a PostgreSQL connection, registers handlers on a `http.ServeMux`, wraps it with `pgctx.Middleware` (binds the DB to each request context), and calls `http.ListenAndServe`. All Go files live in the project root under `package main`.
 
 ### HTTP endpoints
 
