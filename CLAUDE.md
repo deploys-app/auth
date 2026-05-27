@@ -7,9 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 go build -o auth .             # build binary
 go vet ./...                   # lint
+go test ./...                  # run tests
 ```
 
-No test files exist in this codebase.
+Handler tests fake the DB with `github.com/DATA-DOG/go-sqlmock` (bound via
+`pgctx.NewContext`; no transactions are used) and stub Google's token endpoint
+through the `googleTokenURL` package var.
 
 ### Required environment variables
 
@@ -19,6 +22,8 @@ No test files exist in this codebase.
 | `OAUTH2_CLIENT_ID` | Google OAuth app client ID |
 | `OAUTH2_CLIENT_SECRET` | Google OAuth app client secret |
 | `PORT` | Listen port (default: `8080`) |
+| `BASE_URL` | Public base URL of this service (default: `https://auth.deploys.app`) |
+| `INTROSPECTION_TOKEN` | Shared secret guarding `POST /introspect`; unset disables the endpoint |
 
 ## Architecture
 
