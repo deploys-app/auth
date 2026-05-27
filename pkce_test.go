@@ -30,12 +30,12 @@ func TestVerifyPKCE(t *testing.T) {
 
 func TestIsLoopbackHost(t *testing.T) {
 	for host, want := range map[string]bool{
-		"127.0.0.1": true,
-		"::1":       true,
-		"localhost": true,
+		"127.0.0.1":   true,
+		"::1":         true,
+		"localhost":   true,
 		"example.com": false,
-		"10.0.0.1":  false,
-		"":          false,
+		"10.0.0.1":    false,
+		"":            false,
 	} {
 		if got := isLoopbackHost(host); got != want {
 			t.Errorf("isLoopbackHost(%q) = %v, want %v", host, got, want)
@@ -71,13 +71,13 @@ func TestRedirectURIAllowed(t *testing.T) {
 
 func TestValidRegistrationRedirectURI(t *testing.T) {
 	for uri, want := range map[string]bool{
-		"https://app.example.com/cb":   true,
-		"http://127.0.0.1:1234/cb":     true,
-		"http://localhost/cb":          true,
-		"http://app.example.com/cb":    false, // plain http only allowed for loopback
-		"ftp://example.com":            false,
-		"not-a-url":                    false,
-		"":                             false,
+		"https://app.example.com/cb": true,
+		"http://127.0.0.1:1234/cb":   true,
+		"http://localhost/cb":        true,
+		"http://app.example.com/cb":  false, // plain http only allowed for loopback
+		"ftp://example.com":          false,
+		"not-a-url":                  false,
+		"":                           false,
 	} {
 		if got := validRegistrationRedirectURI(uri); got != want {
 			t.Errorf("validRegistrationRedirectURI(%q) = %v, want %v", uri, got, want)

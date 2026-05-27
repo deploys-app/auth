@@ -7,8 +7,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/DATA-DOG/go-sqlmock"
 )
 
 func postForm(t *testing.T, path string, form url.Values) *http.Request {
@@ -18,35 +16,18 @@ func postForm(t *testing.T, path string, form url.Values) *http.Request {
 	return req
 }
 
-func clientRow(id, secret, redirectURI, redirectURIs, authMethod string) *sqlmock.Rows {
-	cols := []string{"id", "secret", "redirect_uri", "redirect_uris", "token_endpoint_auth_method"}
-	var sec any = secret
-	if secret == "" && authMethod == "none" {
-		sec = nil // public clients store NULL secret
-	}
-	return sqlmock.NewRows(cols).AddRow(id, sec, redirectURI, redirectURIs, authMethod)
-}
-
-func codeRow(email, challenge, method, redirectURI, resource string) *sqlmock.Rows {
-	cols := []string{"email", "code_challenge", "code_challenge_method", "redirect_uri", "resource"}
-	return sqlmock.NewRows(cols).AddRow(email, challenge, method, redirectURI, resource)
-}
-
 // --- OLD FLOW (regression): confidential client + client_secret ---
 
 func TestTokenHandler_Confidential_Success(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("web", "topsecret", "https://app.example.com/*", "", "client_secret_post"))
-	mock.ExpectQuery("delete from oauth2_codes").
-		WillReturnRows(codeRow("user@example.com", "", "", "https://app.example.com/cb", ""))
-	mock.ExpectExec("insert into user_tokens").
-		WithArgs(sqlmock.AnyArg(), "user@example.com").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedCode(t, ctx, "abc", "web", "user@example.com", "", "", "https://app.example.com/cb", "")
 
 	form := url.Values{"client_id": {"web"}, "client_secret": {"topsecret"}, "code": {"abc"}}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -61,13 +42,9 @@ func TestTokenHandler_Confidential_Success(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	// Backward compatibility: the legacy client reads refresh_token.
-	if resp.RefreshToken == "" {
-		t.Error("refresh_token must remain populated for the legacy client")
-	}
 	if !strings.HasPrefix(resp.RefreshToken, tokenPrefix) {
 		t.Errorf("refresh_token %q missing prefix %q", resp.RefreshToken, tokenPrefix)
 	}
-	// New fields for OAuth2.1 clients.
 	if resp.AccessToken != resp.RefreshToken {
 		t.Errorf("access_token (%q) should equal refresh_token (%q)", resp.AccessToken, resp.RefreshToken)
 	}
@@ -77,33 +54,46 @@ func TestTokenHandler_Confidential_Success(t *testing.T) {
 	if resp.TokenType != "Bearer" {
 		t.Errorf("token_type = %q, want Bearer", resp.TokenType)
 	}
-	assertExpectations(t, mock)
+	// The token is persisted (hashed) against the right email.
+	if email, ok := tokenEmail(t, ctx, hashToken(resp.RefreshToken)); !ok || email != "user@example.com" {
+		t.Errorf("persisted token email = %q (ok=%v), want user@example.com", email, ok)
+	}
+	// The code is single-use.
+	if n := countRows(t, ctx, "oauth2_codes"); n != 0 {
+		t.Errorf("oauth2_codes = %d, want 0 (code consumed)", n)
+	}
 }
 
 func TestTokenHandler_Confidential_WrongSecret(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("web", "topsecret", "https://app.example.com/*", "", "client_secret_post"))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedCode(t, ctx, "abc", "web", "user@example.com", "", "", "https://app.example.com/cb", "")
 
 	form := url.Values{"client_id": {"web"}, "client_secret": {"wrong"}, "code": {"abc"}}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 	assertOAuthError(t, rec, "invalid_client")
-	assertExpectations(t, mock)
+	// The code must not be consumed on a failed exchange.
+	if n := countRows(t, ctx, "oauth2_codes"); n != 1 {
+		t.Errorf("oauth2_codes = %d, want 1 (code preserved)", n)
+	}
 }
 
 func TestTokenHandler_Confidential_MissingSecret(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("web", "topsecret", "https://app.example.com/*", "", "client_secret_post"))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
 
 	form := url.Values{"client_id": {"web"}, "code": {"abc"}}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
@@ -114,17 +104,14 @@ func TestTokenHandler_Confidential_MissingSecret(t *testing.T) {
 // --- NEW FLOW: public client + PKCE ---
 
 func TestTokenHandler_Public_PKCE_Success(t *testing.T) {
+	t.Parallel()
 	verifier, challenge := pkcePair()
 	const redirect = "http://127.0.0.1:5000/callback"
 
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", redirect, "none"))
-	mock.ExpectQuery("delete from oauth2_codes").
-		WillReturnRows(codeRow("user@example.com", challenge, "S256", redirect, ""))
-	mock.ExpectExec("insert into user_tokens").
-		WithArgs(sqlmock.AnyArg(), "user@example.com").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", redirect)
+	seedCode(t, ctx, "abc", "cli", "user@example.com", challenge, "S256", redirect, "")
 
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
@@ -134,7 +121,7 @@ func TestTokenHandler_Public_PKCE_Success(t *testing.T) {
 		"redirect_uri":  {redirect},
 	}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -156,18 +143,20 @@ func TestTokenHandler_Public_PKCE_Success(t *testing.T) {
 	if resp.ExpiresIn != tokenTTLSeconds {
 		t.Errorf("expires_in = %d, want %d", resp.ExpiresIn, tokenTTLSeconds)
 	}
-	assertExpectations(t, mock)
+	if email, ok := tokenEmail(t, ctx, hashToken(resp.AccessToken)); !ok || email != "user@example.com" {
+		t.Errorf("persisted token email = %q (ok=%v), want user@example.com", email, ok)
+	}
 }
 
 func TestTokenHandler_Public_PKCE_BadVerifier(t *testing.T) {
+	t.Parallel()
 	_, challenge := pkcePair()
 	const redirect = "http://127.0.0.1:5000/callback"
 
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", redirect, "none"))
-	mock.ExpectQuery("delete from oauth2_codes").
-		WillReturnRows(codeRow("user@example.com", challenge, "S256", redirect, ""))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", redirect)
+	seedCode(t, ctx, "abc", "cli", "user@example.com", challenge, "S256", redirect, "")
 
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
@@ -177,23 +166,26 @@ func TestTokenHandler_Public_PKCE_BadVerifier(t *testing.T) {
 		"redirect_uri":  {redirect},
 	}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
 	}
 	assertOAuthError(t, rec, "invalid_grant")
-	assertExpectations(t, mock)
+	if n := countRows(t, ctx, "user_tokens"); n != 0 {
+		t.Errorf("user_tokens = %d, want 0 (no token issued on PKCE failure)", n)
+	}
 }
 
 func TestTokenHandler_Public_RedirectMismatch(t *testing.T) {
+	t.Parallel()
 	verifier, challenge := pkcePair()
+	const redirect = "http://127.0.0.1:5000/callback"
 
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", "http://127.0.0.1:5000/callback", "none"))
-	mock.ExpectQuery("delete from oauth2_codes").
-		WillReturnRows(codeRow("user@example.com", challenge, "S256", "http://127.0.0.1:5000/callback", ""))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", redirect)
+	seedCode(t, ctx, "abc", "cli", "user@example.com", challenge, "S256", redirect, "")
 
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
@@ -203,38 +195,38 @@ func TestTokenHandler_Public_RedirectMismatch(t *testing.T) {
 		"redirect_uri":  {"http://127.0.0.1:5000/different"},
 	}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 	assertOAuthError(t, rec, "invalid_grant")
-	assertExpectations(t, mock)
 }
 
 func TestTokenHandler_Public_MissingVerifier(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", "http://127.0.0.1:5000/callback", "none"))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", "http://127.0.0.1:5000/callback")
 
 	form := url.Values{"grant_type": {"authorization_code"}, "client_id": {"cli"}, "code": {"abc"}}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 	assertOAuthError(t, rec, "invalid_request")
-	assertExpectations(t, mock)
 }
 
 // --- shared request validation ---
 
 func TestTokenHandler_UnsupportedGrantType(t *testing.T) {
-	db, _ := newMock(t)
+	t.Parallel()
 	form := url.Values{"grant_type": {"password"}, "client_id": {"x"}, "code": {"y"}}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	// Rejected before any DB access.
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
@@ -243,12 +235,13 @@ func TestTokenHandler_UnsupportedGrantType(t *testing.T) {
 }
 
 func TestTokenHandler_UnknownClient(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").WillReturnError(sqlNoRows())
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx() // empty DB: client lookup misses
 
 	form := url.Values{"client_id": {"ghost"}, "client_secret": {"x"}, "code": {"y"}}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
@@ -257,20 +250,19 @@ func TestTokenHandler_UnknownClient(t *testing.T) {
 }
 
 func TestTokenHandler_InvalidCode(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("web", "topsecret", "https://app.example.com/*", "", "client_secret_post"))
-	mock.ExpectQuery("delete from oauth2_codes").WillReturnError(sqlNoRows())
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
 
 	form := url.Values{"client_id": {"web"}, "client_secret": {"topsecret"}, "code": {"gone"}}
 	rec := httptest.NewRecorder()
-	TokenHandler{}.ServeHTTP(rec, withDB(postForm(t, "/token", form), db))
+	TokenHandler{}.ServeHTTP(rec, postForm(t, "/token", form).WithContext(ctx))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 	assertOAuthError(t, rec, "invalid_grant")
-	assertExpectations(t, mock)
 }
 
 func assertOAuthError(t *testing.T, rec *httptest.ResponseRecorder, wantCode string) {

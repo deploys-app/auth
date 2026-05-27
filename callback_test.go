@@ -6,51 +6,53 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
-
-	"github.com/DATA-DOG/go-sqlmock"
 )
 
-func sessionRow(clientID, state, callbackState, callbackURL, challenge, method, resource string) *sqlmock.Rows {
-	cols := []string{"client_id", "state", "callback_state", "callback_url", "code_challenge", "code_challenge_method", "resource"}
-	return sqlmock.NewRows(cols).AddRow(clientID, state, callbackState, callbackURL, challenge, method, resource)
-}
+// A single mock Google token endpoint is started lazily and shared by all
+// callback tests. It keys the returned id_token email by the authorization
+// code in the request, so parallel tests do not race over googleTokenURL.
+var (
+	googleMockOnce sync.Once
+	googleMockMap  sync.Map // code -> email
+)
 
-// stubGoogle points the callback token exchange at a local server that returns
-// an id_token carrying email, and restores the real URL afterwards.
-func stubGoogle(t *testing.T, email string) {
+func registerGoogleCode(t *testing.T, code, email string) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"id_token":%q}`, fakeIDToken(email))
-	}))
-	old := googleTokenURL
-	googleTokenURL = srv.URL
-	t.Cleanup(func() {
-		googleTokenURL = old
-		srv.Close()
+	googleMockOnce.Do(func() {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.ParseForm()
+			email := "default@example.com"
+			if v, ok := googleMockMap.Load(r.FormValue("code")); ok {
+				email = v.(string)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"id_token":%q}`, fakeIDToken(email))
+		}))
+		googleTokenURL = srv.URL
 	})
+	googleMockMap.Store(code, email)
+	t.Cleanup(func() { googleMockMap.Delete(code) })
 }
 
 // --- OLD FLOW (regression): Google callback issues an internal code ---
 
 func TestCallbackHandler_Confidential_Success(t *testing.T) {
-	stubGoogle(t, "user@example.com")
+	t.Parallel()
+	registerGoogleCode(t, t.Name(), "user@example.com")
 
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_sessions").
-		WillReturnRows(sessionRow("web", "gstate", "cbstate", "https://app.example.com/cb", "", "", ""))
-	mock.ExpectExec("delete from oauth2_sessions").WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("insert into oauth2_codes").
-		WithArgs(sqlmock.AnyArg(), "web", "user@example.com", "", "", "https://app.example.com/cb", "").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedSession(t, ctx, "sess123", "web", "gstate", "cbstate", "https://app.example.com/cb", "", "", "")
 
-	q := url.Values{"state": {"gstate"}, "code": {"google-code"}}
-	req := httptest.NewRequest(http.MethodGet, "/callback?"+q.Encode(), nil)
+	q := url.Values{"state": {"gstate"}, "code": {t.Name()}}
+	req := getReqPath(t, "/callback", q)
 	req.AddCookie(&http.Cookie{Name: "s", Value: "sess123"})
 	rec := httptest.NewRecorder()
 	CallbackHandler{OAuth2ClientID: "g", OAuth2ClientSecret: "gs", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(req, db))
+		ServeHTTP(rec, req.WithContext(ctx))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302; body=%s", rec.Code, rec.Body.String())
@@ -63,63 +65,86 @@ func TestCallbackHandler_Confidential_Success(t *testing.T) {
 	if u.Query().Get("state") != "cbstate" {
 		t.Errorf("callback state = %q, want cbstate", u.Query().Get("state"))
 	}
-	if u.Query().Get("code") == "" {
-		t.Error("callback code is empty")
+	returnedCode := u.Query().Get("code")
+	if returnedCode == "" {
+		t.Fatal("callback code is empty")
 	}
-	assertExpectations(t, mock)
+	// The session is single-use and an internal code was minted for the email.
+	if n := countRows(t, ctx, "oauth2_sessions"); n != 0 {
+		t.Errorf("oauth2_sessions = %d, want 0 (consumed)", n)
+	}
+	email, challenge, method := codeEmailPKCE(t, ctx, returnedCode)
+	if email != "user@example.com" {
+		t.Errorf("code email = %q, want user@example.com", email)
+	}
+	if challenge != "" || method != "" {
+		t.Errorf("confidential code carried PKCE: (%q,%q)", challenge, method)
+	}
 }
 
 func TestCallbackHandler_MissingSessionCookie(t *testing.T) {
-	db, _ := newMock(t)
+	t.Parallel()
 	q := url.Values{"state": {"gstate"}, "code": {"google-code"}}
-	req := httptest.NewRequest(http.MethodGet, "/callback?"+q.Encode(), nil) // no cookie
+	req := getReqPath(t, "/callback", q) // no cookie
 	rec := httptest.NewRecorder()
-	CallbackHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, withDB(req, db))
+	CallbackHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 
 func TestCallbackHandler_StateMismatch(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_sessions").
-		WillReturnRows(sessionRow("web", "expected-state", "cbstate", "https://app.example.com/cb", "", "", ""))
-	mock.ExpectExec("delete from oauth2_sessions").WillReturnResult(sqlmock.NewResult(0, 1))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedSession(t, ctx, "sess123", "web", "expected-state", "cbstate", "https://app.example.com/cb", "", "", "")
 
 	q := url.Values{"state": {"attacker-state"}, "code": {"google-code"}}
-	req := httptest.NewRequest(http.MethodGet, "/callback?"+q.Encode(), nil)
+	req := getReqPath(t, "/callback", q)
 	req.AddCookie(&http.Cookie{Name: "s", Value: "sess123"})
 	rec := httptest.NewRecorder()
-	CallbackHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, withDB(req, db))
+	CallbackHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, req.WithContext(ctx))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (state mismatch)", rec.Code)
 	}
-	assertExpectations(t, mock)
+	// Session is consumed on read even on mismatch; no code should be minted.
+	if n := countRows(t, ctx, "oauth2_codes"); n != 0 {
+		t.Errorf("oauth2_codes = %d, want 0", n)
+	}
 }
 
 // --- NEW FLOW: PKCE challenge from the session is carried onto the code ---
 
 func TestCallbackHandler_Public_CarriesPKCE(t *testing.T) {
-	stubGoogle(t, "user@example.com")
+	t.Parallel()
+	registerGoogleCode(t, t.Name(), "user@example.com")
 	_, challenge := pkcePair()
 
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_sessions").
-		WillReturnRows(sessionRow("cli", "gstate", "cbstate", "http://127.0.0.1:55001/callback", challenge, "S256", "https://api.deploys.app"))
-	mock.ExpectExec("delete from oauth2_sessions").WillReturnResult(sqlmock.NewResult(0, 1))
-	// The code must be persisted with the PKCE challenge, redirect and resource.
-	mock.ExpectExec("insert into oauth2_codes").
-		WithArgs(sqlmock.AnyArg(), "cli", "user@example.com", challenge, "S256", "http://127.0.0.1:55001/callback", "https://api.deploys.app").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", "http://127.0.0.1:55001/callback")
+	seedSession(t, ctx, "sess123", "cli", "gstate", "cbstate", "http://127.0.0.1:55001/callback", challenge, "S256", "https://api.deploys.app")
 
-	q := url.Values{"state": {"gstate"}, "code": {"google-code"}}
-	req := httptest.NewRequest(http.MethodGet, "/callback?"+q.Encode(), nil)
+	q := url.Values{"state": {"gstate"}, "code": {t.Name()}}
+	req := getReqPath(t, "/callback", q)
 	req.AddCookie(&http.Cookie{Name: "s", Value: "sess123"})
 	rec := httptest.NewRecorder()
-	CallbackHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, withDB(req, db))
+	CallbackHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, req.WithContext(ctx))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302; body=%s", rec.Code, rec.Body.String())
 	}
-	assertExpectations(t, mock)
+	u, _ := url.Parse(rec.Header().Get("Location"))
+	email, gotChallenge, gotMethod := codeEmailPKCE(t, ctx, u.Query().Get("code"))
+	if email != "user@example.com" {
+		t.Errorf("code email = %q", email)
+	}
+	if gotChallenge != challenge || gotMethod != "S256" {
+		t.Errorf("code PKCE = (%q,%q), want (%q,S256)", gotChallenge, gotMethod, challenge)
+	}
+}
+
+func getReqPath(t *testing.T, path string, q url.Values) *http.Request {
+	t.Helper()
+	return httptest.NewRequest(http.MethodGet, path+"?"+q.Encode(), nil)
 }

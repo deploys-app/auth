@@ -10,9 +10,12 @@ go vet ./...                   # lint
 go test ./...                  # run tests
 ```
 
-Handler tests fake the DB with `github.com/DATA-DOG/go-sqlmock` (bound via
-`pgctx.NewContext`; no transactions are used) and stub Google's token endpoint
-through the `googleTokenURL` package var.
+Handler tests run against a real CockroachDB: `tu.Setup()` starts an isolated
+in-memory `cockroach-go/v2/testserver` per test and `schema.Migrate` applies the
+embedded `schema/*.sql` migrations. `newTestDB(t)` (setup_test.go) returns a
+`*tu.Context`; use `db.Ctx()` for both seeding (via `pgctx`) and the request
+context. Google's token endpoint is stubbed through the `googleTokenURL` package
+var. Tests download the CockroachDB binary on first run.
 
 ### Required environment variables
 

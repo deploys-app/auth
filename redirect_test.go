@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/DATA-DOG/go-sqlmock"
 )
 
 func getReq(t *testing.T, q url.Values) *http.Request {
@@ -27,10 +25,10 @@ func findCookie(rec *httptest.ResponseRecorder, name string) *http.Cookie {
 // --- OLD FLOW (regression): confidential client redirect to Google ---
 
 func TestRedirectHandler_Confidential_Success(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("web", "topsecret", "https://app.example.com/*", "", "client_secret_post"))
-	mock.ExpectExec("insert into oauth2_sessions").WillReturnResult(sqlmock.NewResult(0, 1))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
 
 	q := url.Values{
 		"client_id":    {"web"},
@@ -39,7 +37,7 @@ func TestRedirectHandler_Confidential_Success(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	RedirectHandler{OAuth2ClientID: "googleclient", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(getReq(t, q), db))
+		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302; body=%s", rec.Code, rec.Body.String())
@@ -57,10 +55,14 @@ func TestRedirectHandler_Confidential_Success(t *testing.T) {
 	if c := findCookie(rec, "s"); c == nil || c.Value == "" {
 		t.Error("session cookie 's' not set")
 	}
-	assertExpectations(t, mock)
+	if n := countRows(t, ctx, "oauth2_sessions"); n != 1 {
+		t.Errorf("oauth2_sessions = %d, want 1", n)
+	}
 }
 
 func TestRedirectHandler_MissingParams(t *testing.T) {
+	t.Parallel()
+	// All rejected before any DB access, so no test DB is needed.
 	cases := map[string]url.Values{
 		"missing client_id":    {"state": {"s"}, "redirect_uri": {"https://a/cb"}},
 		"missing state":        {"client_id": {"web"}, "redirect_uri": {"https://a/cb"}},
@@ -69,10 +71,8 @@ func TestRedirectHandler_MissingParams(t *testing.T) {
 	}
 	for name, q := range cases {
 		t.Run(name, func(t *testing.T) {
-			db, _ := newMock(t) // no DB calls expected
 			rec := httptest.NewRecorder()
-			RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.
-				ServeHTTP(rec, withDB(getReq(t, q), db))
+			RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.ServeHTTP(rec, getReq(t, q))
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", rec.Code)
 			}
@@ -81,27 +81,29 @@ func TestRedirectHandler_MissingParams(t *testing.T) {
 }
 
 func TestRedirectHandler_UnknownClient(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").WillReturnError(sqlNoRows())
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx() // empty DB
 
 	q := url.Values{"client_id": {"ghost"}, "state": {"s"}, "redirect_uri": {"https://a/cb"}}
 	rec := httptest.NewRecorder()
 	RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(getReq(t, q), db))
+		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 
 func TestRedirectHandler_Confidential_RedirectNotAllowed(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("web", "topsecret", "https://app.example.com/*", "", "client_secret_post"))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
 
 	q := url.Values{"client_id": {"web"}, "state": {"s"}, "redirect_uri": {"https://evil.example.com/cb"}}
 	rec := httptest.NewRecorder()
 	RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(getReq(t, q), db))
+		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
@@ -110,15 +112,11 @@ func TestRedirectHandler_Confidential_RedirectNotAllowed(t *testing.T) {
 // --- NEW FLOW: public client requires PKCE + exact (loopback) redirect ---
 
 func TestRedirectHandler_Public_Success(t *testing.T) {
+	t.Parallel()
 	_, challenge := pkcePair()
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", "http://127.0.0.1:1234/callback", "none"))
-	// PKCE challenge + method must be persisted on the session for the callback.
-	mock.ExpectExec("insert into oauth2_sessions").
-		WithArgs(sqlmock.AnyArg(), "cli", sqlmock.AnyArg(), "cbstate",
-			"http://127.0.0.1:55001/callback", challenge, "S256", "").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", "http://127.0.0.1:1234/callback")
 
 	q := url.Values{
 		"client_id":             {"cli"},
@@ -129,7 +127,7 @@ func TestRedirectHandler_Public_Success(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	RedirectHandler{OAuth2ClientID: "googleclient", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(getReq(t, q), db))
+		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302; body=%s", rec.Code, rec.Body.String())
@@ -137,28 +135,37 @@ func TestRedirectHandler_Public_Success(t *testing.T) {
 	if !strings.HasPrefix(rec.Header().Get("Location"), "https://accounts.google.com/") {
 		t.Errorf("Location = %q", rec.Header().Get("Location"))
 	}
-	assertExpectations(t, mock)
+	// The PKCE challenge must be persisted on the session for the callback.
+	challengeStored, methodStored, cbURL := oneSessionPKCE(t, ctx)
+	if challengeStored != challenge || methodStored != "S256" {
+		t.Errorf("session PKCE = (%q,%q), want (%q,S256)", challengeStored, methodStored, challenge)
+	}
+	if cbURL != "http://127.0.0.1:55001/callback" {
+		t.Errorf("session callback_url = %q", cbURL)
+	}
 }
 
 func TestRedirectHandler_Public_MissingChallenge(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", "http://127.0.0.1:1234/callback", "none"))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", "http://127.0.0.1:1234/callback")
 
 	q := url.Values{"client_id": {"cli"}, "state": {"s"}, "redirect_uri": {"http://127.0.0.1:55001/callback"}}
 	rec := httptest.NewRecorder()
 	RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(getReq(t, q), db))
+		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (PKCE required for public clients)", rec.Code)
 	}
 }
 
 func TestRedirectHandler_Public_UnsupportedChallengeMethod(t *testing.T) {
+	t.Parallel()
 	_, challenge := pkcePair()
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", "http://127.0.0.1:1234/callback", "none"))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", "http://127.0.0.1:1234/callback")
 
 	q := url.Values{
 		"client_id":             {"cli"},
@@ -169,17 +176,18 @@ func TestRedirectHandler_Public_UnsupportedChallengeMethod(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(getReq(t, q), db))
+		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (only S256)", rec.Code)
 	}
 }
 
 func TestRedirectHandler_Public_RedirectNotRegistered(t *testing.T) {
+	t.Parallel()
 	_, challenge := pkcePair()
-	db, mock := newMock(t)
-	mock.ExpectQuery("from oauth2_clients").
-		WillReturnRows(clientRow("cli", "", "", "http://127.0.0.1:1234/callback", "none"))
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedPublicClient(t, ctx, "cli", "http://127.0.0.1:1234/callback")
 
 	q := url.Values{
 		"client_id":             {"cli"},
@@ -190,7 +198,7 @@ func TestRedirectHandler_Public_RedirectNotRegistered(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.
-		ServeHTTP(rec, withDB(getReq(t, q), db))
+		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (redirect not registered)", rec.Code)
 	}

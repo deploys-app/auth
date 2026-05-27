@@ -6,8 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/DATA-DOG/go-sqlmock"
 )
 
 func postJSON(t *testing.T, path, body string) *http.Request {
@@ -18,13 +16,13 @@ func postJSON(t *testing.T, path, body string) *http.Request {
 }
 
 func TestRegisterHandler_Success(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectExec("insert into oauth2_clients").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
 
 	body := `{"client_name":"my cli","redirect_uris":["http://127.0.0.1:1234/cb"]}`
 	rec := httptest.NewRecorder()
-	RegisterHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, withDB(postJSON(t, "/register", body), db))
+	RegisterHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, postJSON(t, "/register", body).WithContext(ctx))
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
@@ -38,7 +36,7 @@ func TestRegisterHandler_Success(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if resp.ClientID == "" {
-		t.Error("client_id is empty")
+		t.Fatal("client_id is empty")
 	}
 	if resp.TokenEndpointAuthMethod != "none" {
 		t.Errorf("token_endpoint_auth_method = %q, want none", resp.TokenEndpointAuthMethod)
@@ -46,24 +44,32 @@ func TestRegisterHandler_Success(t *testing.T) {
 	if len(resp.RedirectURIs) != 1 || resp.RedirectURIs[0] != "http://127.0.0.1:1234/cb" {
 		t.Errorf("redirect_uris = %v", resp.RedirectURIs)
 	}
-	assertExpectations(t, mock)
+	// The client is persisted as a public client with the registered redirect.
+	if uris, ok := clientRedirectURIs(t, ctx, resp.ClientID); !ok || uris != "http://127.0.0.1:1234/cb" {
+		t.Errorf("persisted redirect_uris = %q (ok=%v)", uris, ok)
+	}
 }
 
 func TestRegisterHandler_HTTPSRedirectAllowed(t *testing.T) {
-	db, mock := newMock(t)
-	mock.ExpectExec("insert into oauth2_clients").WillReturnResult(sqlmock.NewResult(0, 1))
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
 
 	body := `{"redirect_uris":["https://app.example.com/cb"]}`
 	rec := httptest.NewRecorder()
-	RegisterHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, withDB(postJSON(t, "/register", body), db))
+	RegisterHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, postJSON(t, "/register", body).WithContext(ctx))
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
-	assertExpectations(t, mock)
+	if n := countRows(t, ctx, "oauth2_clients"); n != 1 {
+		t.Errorf("oauth2_clients = %d, want 1", n)
+	}
 }
 
 func TestRegisterHandler_Rejections(t *testing.T) {
+	t.Parallel()
+	// All rejected before any DB write, so no test DB is needed.
 	cases := map[string]string{
 		"invalid json":          `{not json`,
 		"no redirect_uris":      `{"client_name":"x"}`,
@@ -72,9 +78,8 @@ func TestRegisterHandler_Rejections(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			db, _ := newMock(t) // no insert expected
 			rec := httptest.NewRecorder()
-			RegisterHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, withDB(postJSON(t, "/register", body), db))
+			RegisterHandler{BaseURL: "https://auth.test"}.ServeHTTP(rec, postJSON(t, "/register", body))
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
 			}
