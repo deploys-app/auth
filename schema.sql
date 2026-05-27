@@ -2,7 +2,7 @@ create table oauth2_clients (
 	id                         string,
 	secret                     string,
 	redirect_uri               string      not null default '',
-	redirect_uris              string      not null default '',
+	redirect_uris              string[]    not null default array[]::string[],
 	token_endpoint_auth_method string      not null default 'client_secret_post',
 	client_name                string      not null default '',
 	created_at                 timestamptz not null default now(),

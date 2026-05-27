@@ -45,8 +45,8 @@ func TestRegisterHandler_Success(t *testing.T) {
 		t.Errorf("redirect_uris = %v", resp.RedirectURIs)
 	}
 	// The client is persisted as a public client with the registered redirect.
-	if uris, ok := clientRedirectURIs(t, ctx, resp.ClientID); !ok || uris != "http://127.0.0.1:1234/cb" {
-		t.Errorf("persisted redirect_uris = %q (ok=%v)", uris, ok)
+	if uris, ok := clientRedirectURIs(t, ctx, resp.ClientID); !ok || len(uris) != 1 || uris[0] != "http://127.0.0.1:1234/cb" {
+		t.Errorf("persisted redirect_uris = %v (ok=%v)", uris, ok)
 	}
 }
 

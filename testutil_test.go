@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/acoshift/pgsql/pgctx"
+	"github.com/lib/pq"
 )
 
 // pkcePair returns a PKCE verifier and its S256 challenge.
@@ -38,12 +39,12 @@ func seedConfidentialClient(t *testing.T, ctx context.Context, id, secret, redir
 	}
 }
 
-func seedPublicClient(t *testing.T, ctx context.Context, id string, redirectURIs string) {
+func seedPublicClient(t *testing.T, ctx context.Context, id string, redirectURIs ...string) {
 	t.Helper()
 	_, err := pgctx.Exec(ctx, `
 		insert into oauth2_clients (id, redirect_uris, token_endpoint_auth_method)
 		values ($1, $2, 'none')
-	`, id, redirectURIs)
+	`, id, pq.Array(redirectURIs))
 	if err != nil {
 		t.Fatalf("seed public client: %v", err)
 	}
@@ -110,12 +111,12 @@ func countRows(t *testing.T, ctx context.Context, table string) int {
 	return n
 }
 
-func clientRedirectURIs(t *testing.T, ctx context.Context, id string) (string, bool) {
+func clientRedirectURIs(t *testing.T, ctx context.Context, id string) ([]string, bool) {
 	t.Helper()
-	var uris string
+	var uris []string
 	err := pgctx.QueryRow(ctx, `select redirect_uris from oauth2_clients where id = $1`, id).Scan(&uris)
 	if err != nil {
-		return "", false
+		return nil, false
 	}
 	return uris, true
 }

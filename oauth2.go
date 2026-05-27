@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 
 	"github.com/acoshift/pgsql/pgctx"
+	"github.com/lib/pq"
 )
 
 var (
@@ -50,13 +50,12 @@ type OAuth2Code struct {
 func getOAuth2Client(ctx context.Context, clientID string) (*OAuth2Client, error) {
 	var x OAuth2Client
 	var secret sql.NullString
-	var redirectURIs string
 	err := pgctx.QueryRow(ctx, `
 		select id, secret, redirect_uri, redirect_uris, token_endpoint_auth_method
 		from oauth2_clients
 		where id = $1
 	`, clientID).Scan(
-		&x.ID, &secret, &x.RedirectURI, &redirectURIs, &x.TokenEndpointAuthMethod,
+		&x.ID, &secret, &x.RedirectURI, &x.RedirectURIs, &x.TokenEndpointAuthMethod,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrOAuth2ClientNotFound
@@ -65,9 +64,6 @@ func getOAuth2Client(ctx context.Context, clientID string) (*OAuth2Client, error
 		return nil, err
 	}
 	x.Secret = secret.String
-	if redirectURIs != "" {
-		x.RedirectURIs = strings.Split(redirectURIs, "\n")
-	}
 	return &x, nil
 }
 
@@ -76,7 +72,7 @@ func insertOAuth2Client(ctx context.Context, c *OAuth2Client) error {
 	_, err := pgctx.Exec(ctx, `
 		insert into oauth2_clients (id, secret, redirect_uri, redirect_uris, token_endpoint_auth_method, client_name)
 		values ($1, null, '', $2, $3, $4)
-	`, c.ID, strings.Join(c.RedirectURIs, "\n"), c.TokenEndpointAuthMethod, c.ClientName)
+	`, c.ID, pq.Array(c.RedirectURIs), c.TokenEndpointAuthMethod, c.ClientName)
 	return err
 }
 
