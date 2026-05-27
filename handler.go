@@ -141,6 +141,10 @@ func isURL(s string) bool {
 	return (p.Scheme == "http" || p.Scheme == "https") && p.Host != ""
 }
 
+// googleTokenURL is Google's OAuth2 token endpoint. It is a variable so tests
+// can point the callback exchange at a stub server.
+var googleTokenURL = "https://oauth2.googleapis.com/token"
+
 type CallbackHandler struct {
 	OAuth2ClientID     string
 	OAuth2ClientSecret string
@@ -197,7 +201,7 @@ func (h CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params.Set("client_id", h.OAuth2ClientID)
 	params.Set("client_secret", h.OAuth2ClientSecret)
 
-	resp, err := http.Post("https://oauth2.googleapis.com/token", "application/x-www-form-urlencoded", strings.NewReader(params.Encode()))
+	resp, err := http.Post(googleTokenURL, "application/x-www-form-urlencoded", strings.NewReader(params.Encode()))
 	if err != nil {
 		slog.WarnContext(ctx, "callback: exchange token", "error", err)
 		failResponse(w, r)
