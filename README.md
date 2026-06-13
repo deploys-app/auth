@@ -19,6 +19,8 @@ Required environment variables:
 | `OAUTH2_CLIENT_ID` | Google OAuth app client ID |
 | `OAUTH2_CLIENT_SECRET` | Google OAuth app client secret |
 | `PORT` | Listen port (default: `8080`) |
+| `BASE_URL` | Public base URL of this service (default: `https://auth.deploys.app`) |
+| `INTROSPECTION_TOKEN` | Shared secret for the `/introspect` endpoint; if unset, introspection is disabled |
 
 ```shell
 $ ./auth
@@ -31,10 +33,22 @@ the service starts.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/` | Validate the OAuth2 client and redirect to Google |
+| `GET` | `/.well-known/oauth-authorization-server` | OAuth 2.0 Authorization Server Metadata (RFC 8414) |
+| `GET` | `/` | Validate the OAuth2 client and redirect to Google (authorize endpoint; supports PKCE) |
 | `GET` | `/callback` | Receive Google's code and issue an internal auth code |
-| `POST` | `/token` | Exchange client credentials + code for a user token |
+| `POST` | `/token` | Exchange code (+ secret or PKCE verifier) for a user token |
+| `POST` | `/register` | Dynamic Client Registration for public clients (RFC 7591) |
+| `POST` | `/introspect` | Token introspection for resource servers (RFC 7662) |
 | `POST` | `/revoke` | Revoke a user token |
+
+### MCP / public clients
+
+The service is an OAuth 2.1 authorization server. CLI / MCP clients register
+dynamically at `/register` (public clients, no secret), use **PKCE (S256)** at
+the authorize and token endpoints, and may use loopback redirect URIs
+(`http://127.0.0.1:<port>`). Confidential web clients keep using
+`client_secret` as before. A resource server validates issued bearer tokens via
+`/introspect` (authenticated with `INTROSPECTION_TOKEN`).
 
 ## Deployment
 

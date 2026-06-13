@@ -7,9 +7,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 go build -o auth .             # build binary
 go vet ./...                   # lint
+go test ./...                  # run tests
 ```
 
-No test files exist in this codebase.
+Handler tests run against a real CockroachDB: `tu.Setup()` starts an isolated
+in-memory `cockroach-go/v2/testserver` per test and `schema.Migrate` applies the
+embedded `schema/*.sql` migrations. `newTestDB(t)` (setup_test.go) returns a
+`*tu.Context`; use `db.Ctx()` for both seeding (via `pgctx`) and the request
+context. Google's token endpoint is stubbed through the `googleTokenURL` package
+var. Tests download the CockroachDB binary on first run.
 
 ### Required environment variables
 
@@ -19,6 +25,8 @@ No test files exist in this codebase.
 | `OAUTH2_CLIENT_ID` | Google OAuth app client ID |
 | `OAUTH2_CLIENT_SECRET` | Google OAuth app client secret |
 | `PORT` | Listen port (default: `8080`) |
+| `BASE_URL` | Public base URL of this service (default: `https://auth.deploys.app`) |
+| `INTROSPECTION_TOKEN` | Shared secret guarding `POST /introspect`; unset disables the endpoint |
 
 ## Architecture
 
