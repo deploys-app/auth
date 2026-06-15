@@ -126,7 +126,11 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params.Set("redirect_uri", h.BaseURL+"/callback")
 	params.Set("scope", "https://www.googleapis.com/auth/userinfo.email")
 	params.Set("access_type", "online")
-	params.Set("prompt", "consent")
+	// select_account shows Google's account chooser but skips the consent screen
+	// for users who already granted access — one screen on returning logins
+	// instead of two. We only read the email scope with access_type=online, so we
+	// never needed the forced re-consent that prompt=consent implies.
+	params.Set("prompt", "select_account")
 	params.Set("state", state)
 
 	target := "https://accounts.google.com/o/oauth2/auth?" + params.Encode()
