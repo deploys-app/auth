@@ -52,6 +52,9 @@ func TestRedirectHandler_Confidential_Success(t *testing.T) {
 	if !strings.Contains(loc, url.QueryEscape("https://auth.test/callback")) {
 		t.Errorf("Location missing callback redirect_uri: %q", loc)
 	}
+	if !strings.Contains(loc, "prompt=select_account") {
+		t.Errorf("Location missing prompt=select_account (avoids the extra consent screen): %q", loc)
+	}
 	if c := findCookie(rec, "s"); c == nil || c.Value == "" {
 		t.Error("session cookie 's' not set")
 	}
