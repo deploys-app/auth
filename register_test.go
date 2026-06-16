@@ -71,10 +71,11 @@ func TestRegisterHandler_Rejections(t *testing.T) {
 	t.Parallel()
 	// All rejected before any DB write, so no test DB is needed.
 	cases := map[string]string{
-		"invalid json":          `{not json`,
-		"no redirect_uris":      `{"client_name":"x"}`,
-		"non-loopback http":     `{"redirect_uris":["http://app.example.com/cb"]}`,
-		"confidential rejected": `{"redirect_uris":["https://app.example.com/cb"],"token_endpoint_auth_method":"client_secret_post"}`,
+		"invalid json":            `{not json`,
+		"no redirect_uris":        `{"client_name":"x"}`,
+		"non-loopback http":       `{"redirect_uris":["http://app.example.com/cb"]}`,
+		"confidential rejected":   `{"redirect_uris":["https://app.example.com/cb"],"token_endpoint_auth_method":"client_secret_post"}`,
+		"regexp pattern rejected": `{"redirect_uris":["regexp:https://*.example.com/cb"]}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

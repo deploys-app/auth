@@ -28,7 +28,7 @@ func TestRedirectHandler_Confidential_Success(t *testing.T) {
 	t.Parallel()
 	tdb := newTestDB(t)
 	ctx := tdb.Ctx()
-	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/cb")
 
 	q := url.Values{
 		"client_id":    {"web"},
@@ -101,7 +101,7 @@ func TestRedirectHandler_Confidential_RedirectNotAllowed(t *testing.T) {
 	t.Parallel()
 	tdb := newTestDB(t)
 	ctx := tdb.Ctx()
-	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/cb")
 
 	q := url.Values{"client_id": {"web"}, "state": {"s"}, "redirect_uri": {"https://evil.example.com/cb"}}
 	rec := httptest.NewRecorder()
@@ -109,6 +109,39 @@ func TestRedirectHandler_Confidential_RedirectNotAllowed(t *testing.T) {
 		ServeHTTP(rec, getReq(t, q).WithContext(ctx))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestRedirectHandler_RegexpRedirect exercises an operator-provisioned "regexp:"
+// redirect_uris entry end to end (the PR-preview use case): a bounded pattern
+// that matches dynamic preview hosts but not arbitrary subdomains.
+func TestRedirectHandler_RegexpRedirect(t *testing.T) {
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	seedConfidentialClient(t, ctx, "preview", "topsecret",
+		`regexp:https://console-pr-\d+-606515731026706458.rcf2.deploys.app/auth/callback`)
+
+	cases := map[string]struct {
+		redirect string
+		want     int
+	}{
+		"matching preview host":   {"https://console-pr-42-606515731026706458.rcf2.deploys.app/auth/callback", http.StatusFound},
+		"non-digit pr id":         {"https://console-pr-abc-606515731026706458.rcf2.deploys.app/auth/callback", http.StatusBadRequest},
+		"different account zone":  {"https://console-pr-42-999999999999999999.rcf2.deploys.app/auth/callback", http.StatusBadRequest},
+		"arbitrary subdomain":     {"https://evil.rcf2.deploys.app/auth/callback", http.StatusBadRequest},
+		"dot is literal not wild": {"https://console-pr-42-606515731026706458Xrcf2.deploys.app/auth/callback", http.StatusBadRequest},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			q := url.Values{"client_id": {"preview"}, "state": {"s"}, "redirect_uri": {c.redirect}}
+			rec := httptest.NewRecorder()
+			RedirectHandler{OAuth2ClientID: "g", BaseURL: "https://auth.test"}.
+				ServeHTTP(rec, getReq(t, q).WithContext(ctx))
+			if rec.Code != c.want {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, c.want, rec.Body.String())
+			}
+		})
 	}
 }
 

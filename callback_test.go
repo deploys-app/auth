@@ -44,7 +44,7 @@ func TestCallbackHandler_Confidential_Success(t *testing.T) {
 
 	tdb := newTestDB(t)
 	ctx := tdb.Ctx()
-	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/cb")
 	seedSession(t, ctx, "sess123", "web", "gstate", "cbstate", "https://app.example.com/cb", "", "", "")
 
 	q := url.Values{"state": {"gstate"}, "code": {t.Name()}}
