@@ -18,8 +18,7 @@ var (
 type OAuth2Client struct {
 	ID                      string
 	Secret                  string
-	RedirectURI             string   // legacy glob pattern (confidential clients)
-	RedirectURIs            []string // exact URIs (public / DCR clients)
+	RedirectURIs            []string // exact URIs, or "regexp:" patterns (operator-provisioned only)
 	TokenEndpointAuthMethod string   // "client_secret_post" or "none"
 	ClientName              string
 }
@@ -51,11 +50,11 @@ func getOAuth2Client(ctx context.Context, clientID string) (*OAuth2Client, error
 	var x OAuth2Client
 	var secret sql.NullString
 	err := pgctx.QueryRow(ctx, `
-		select id, secret, redirect_uri, redirect_uris, token_endpoint_auth_method
+		select id, secret, redirect_uris, token_endpoint_auth_method
 		from oauth2_clients
 		where id = $1
 	`, clientID).Scan(
-		&x.ID, &secret, &x.RedirectURI, &x.RedirectURIs, &x.TokenEndpointAuthMethod,
+		&x.ID, &secret, &x.RedirectURIs, &x.TokenEndpointAuthMethod,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrOAuth2ClientNotFound
@@ -70,8 +69,8 @@ func getOAuth2Client(ctx context.Context, clientID string) (*OAuth2Client, error
 // insertOAuth2Client persists a dynamically registered public client.
 func insertOAuth2Client(ctx context.Context, c *OAuth2Client) error {
 	_, err := pgctx.Exec(ctx, `
-		insert into oauth2_clients (id, secret, redirect_uri, redirect_uris, token_endpoint_auth_method, client_name)
-		values ($1, null, '', $2, $3, $4)
+		insert into oauth2_clients (id, secret, redirect_uris, token_endpoint_auth_method, client_name)
+		values ($1, null, $2, $3, $4)
 	`, c.ID, pq.Array(c.RedirectURIs), c.TokenEndpointAuthMethod, c.ClientName)
 	return err
 }

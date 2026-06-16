@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -26,9 +27,16 @@ func isLoopbackHost(host string) bool {
 	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }
 
-// redirectURIAllowed reports whether got matches one of the registered exact
-// redirect URIs. Per RFC 8252 the port is ignored for loopback addresses, so a
-// CLI listening on an ephemeral localhost port is accepted.
+// redirectRegexpPrefix marks a redirect_uris entry as a pattern rather than an
+// exact URI. Such entries are operator-provisioned only — DCR rejects them (see
+// validRegistrationRedirectURI) — so a self-registered client can never widen
+// its own redirect matching.
+const redirectRegexpPrefix = "regexp:"
+
+// redirectURIAllowed reports whether got matches one of the client's registered
+// redirect URIs. An entry is matched exactly (scheme + host + path; the port may
+// vary for loopback per RFC 8252) unless it carries the "regexp:" prefix, in
+// which case the remainder is a pattern (see matchRedirectPattern).
 func redirectURIAllowed(registered []string, got string) bool {
 	gu, err := url.Parse(got)
 	if err != nil {
@@ -37,6 +45,12 @@ func redirectURIAllowed(registered []string, got string) bool {
 	for _, raw := range registered {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
+			continue
+		}
+		if pattern, ok := strings.CutPrefix(raw, redirectRegexpPrefix); ok {
+			if matchRedirectPattern(pattern, got) {
+				return true
+			}
 			continue
 		}
 		ru, err := url.Parse(raw)
@@ -62,9 +76,37 @@ func redirectURIAllowed(registered []string, got string) bool {
 	return false
 }
 
+// matchRedirectPattern matches got against an operator-provisioned redirect
+// pattern using the deploys glob dialect: literal '.' and '/' are escaped, '*'
+// expands to '.*', and any other regex metacharacters (e.g. \d+) are honoured.
+// The pattern is anchored ^...$ against the whole redirect URI, so it cannot
+// match a broader host than written. A malformed pattern denies (never panics);
+// Go's RE2 engine guarantees linear-time matching (no ReDoS).
+//
+// Matching is case-sensitive (unlike the host-only EqualFold of the exact path),
+// so write the host in lowercase — the authority of an inbound redirect URI is
+// already lowercase (browsers normalise it; generated preview hosts are
+// lowercase). Being case-sensitive only ever denies, never widens.
+func matchRedirectPattern(pattern, got string) bool {
+	p := strings.ReplaceAll(pattern, ".", `\.`)
+	p = strings.ReplaceAll(p, "/", `\/`)
+	p = strings.ReplaceAll(p, "*", `.*`)
+	re, err := regexp.Compile(`^` + p + `$`)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(got)
+}
+
 // validRegistrationRedirectURI enforces the redirect URIs a client may register:
 // HTTPS anywhere, or plain HTTP only for loopback (native/CLI clients).
 func validRegistrationRedirectURI(s string) bool {
+	// "regexp:" patterns are operator-provisioned only: a dynamically registered
+	// (DCR) client may register exact URIs but never a pattern, which could match
+	// hosts it does not control.
+	if strings.HasPrefix(s, redirectRegexpPrefix) {
+		return false
+	}
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {
 		return false

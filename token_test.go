@@ -22,7 +22,7 @@ func TestTokenHandler_Confidential_Success(t *testing.T) {
 	t.Parallel()
 	tdb := newTestDB(t)
 	ctx := tdb.Ctx()
-	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/cb")
 	seedCode(t, ctx, "abc", "web", "user@example.com", "", "", "https://app.example.com/cb", "")
 
 	form := url.Values{"client_id": {"web"}, "client_secret": {"topsecret"}, "code": {"abc"}}
@@ -68,7 +68,7 @@ func TestTokenHandler_Confidential_WrongSecret(t *testing.T) {
 	t.Parallel()
 	tdb := newTestDB(t)
 	ctx := tdb.Ctx()
-	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/cb")
 	seedCode(t, ctx, "abc", "web", "user@example.com", "", "", "https://app.example.com/cb", "")
 
 	form := url.Values{"client_id": {"web"}, "client_secret": {"wrong"}, "code": {"abc"}}
@@ -89,7 +89,7 @@ func TestTokenHandler_Confidential_MissingSecret(t *testing.T) {
 	t.Parallel()
 	tdb := newTestDB(t)
 	ctx := tdb.Ctx()
-	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/cb")
 
 	form := url.Values{"client_id": {"web"}, "code": {"abc"}}
 	rec := httptest.NewRecorder()
@@ -253,7 +253,7 @@ func TestTokenHandler_InvalidCode(t *testing.T) {
 	t.Parallel()
 	tdb := newTestDB(t)
 	ctx := tdb.Ctx()
-	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/*")
+	seedConfidentialClient(t, ctx, "web", "topsecret", "https://app.example.com/cb")
 
 	form := url.Values{"client_id": {"web"}, "client_secret": {"topsecret"}, "code": {"gone"}}
 	rec := httptest.NewRecorder()

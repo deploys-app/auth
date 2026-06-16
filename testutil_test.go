@@ -28,12 +28,12 @@ func fakeIDToken(email string) string {
 
 // --- seeding helpers (operate on a context already carrying the DB) ---
 
-func seedConfidentialClient(t *testing.T, ctx context.Context, id, secret, redirectGlob string) {
+func seedConfidentialClient(t *testing.T, ctx context.Context, id, secret string, redirectURIs ...string) {
 	t.Helper()
 	_, err := pgctx.Exec(ctx, `
-		insert into oauth2_clients (id, secret, redirect_uri, token_endpoint_auth_method)
+		insert into oauth2_clients (id, secret, redirect_uris, token_endpoint_auth_method)
 		values ($1, $2, $3, 'client_secret_post')
-	`, id, secret, redirectGlob)
+	`, id, secret, pq.Array(redirectURIs))
 	if err != nil {
 		t.Fatalf("seed confidential client: %v", err)
 	}

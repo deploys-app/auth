@@ -59,6 +59,17 @@ func TestRedirectURIAllowed(t *testing.T) {
 		{"host mismatch", []string{"https://app.example.com/cb"}, "https://evil.example.com/cb", false},
 		{"not in list", []string{"https://a.example.com/cb"}, "https://b.example.com/cb", false},
 		{"matches second entry", []string{"https://a.example.com/cb", "http://127.0.0.1:1/cb"}, "http://127.0.0.1:42/cb", true},
+
+		// "regexp:" patterns (operator-provisioned). The PR-preview use case: a
+		// bounded pattern, NOT an all-subdomain wildcard.
+		{"regexp digit match", []string{`regexp:https://console-pr-\d+-606515731026706458.rcf2.deploys.app/auth/callback`}, "https://console-pr-42-606515731026706458.rcf2.deploys.app/auth/callback", true},
+		{"regexp rejects non-digit", []string{`regexp:https://console-pr-\d+-606515731026706458.rcf2.deploys.app/auth/callback`}, "https://console-pr-abc-606515731026706458.rcf2.deploys.app/auth/callback", false},
+		{"regexp dot is literal", []string{`regexp:https://console-pr-\d+-606515731026706458.rcf2.deploys.app/auth/callback`}, "https://console-pr-42-606515731026706458Xrcf2.deploys.app/auth/callback", false},
+		{"regexp rejects arbitrary subdomain", []string{`regexp:https://console-pr-\d+-606515731026706458.rcf2.deploys.app/auth/callback`}, "https://evil.rcf2.deploys.app/auth/callback", false},
+		{"regexp star wildcard", []string{`regexp:https://app.example.com/*`}, "https://app.example.com/deep/cb", true},
+		{"regexp anchored at end", []string{`regexp:https://app.example.com/cb`}, "https://app.example.com/cb/extra", false},
+		{"regexp anchored at start", []string{`regexp:https://app.example.com/cb`}, "evil-https://app.example.com/cb", false},
+		{"exact and regexp entries together", []string{"https://a.example.com/cb", `regexp:https://console-pr-\d+-606515731026706458.rcf2.deploys.app/auth/callback`}, "https://console-pr-7-606515731026706458.rcf2.deploys.app/auth/callback", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -78,6 +89,9 @@ func TestValidRegistrationRedirectURI(t *testing.T) {
 		"ftp://example.com":          false,
 		"not-a-url":                  false,
 		"":                           false,
+		// DCR must never let a client self-register a "regexp:" pattern.
+		`regexp:https://app.example.com/*`:  false,
+		`regexp:https://console-pr-\d+.com`: false,
 	} {
 		if got := validRegistrationRedirectURI(uri); got != want {
 			t.Errorf("validRegistrationRedirectURI(%q) = %v, want %v", uri, got, want)

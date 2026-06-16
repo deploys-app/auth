@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/acoshift/pgsql/pgctx"
@@ -64,9 +63,8 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Public clients (CLI / MCP) must use PKCE.
 	if oauth2Client.IsPublic() {
-		// Public clients (CLI / MCP) must use PKCE and an exact, pre-registered
-		// redirect URI (loopback port is allowed to vary).
 		if codeChallenge == "" {
 			http.Error(w, "Missing code_challenge parameter", http.StatusBadRequest)
 			return
@@ -75,22 +73,15 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unsupported code_challenge_method parameter", http.StatusBadRequest)
 			return
 		}
-		if !redirectURIAllowed(oauth2Client.RedirectURIs, callbackURL) {
-			slog.WarnContext(ctx, "redirect: invalid redirect_uri", "client_id", clientID, "redirect_uri", callbackURL)
-			http.Error(w, "Invalid redirect_uri parameter", http.StatusBadRequest)
-			return
-		}
-	} else {
-		pattern := oauth2Client.RedirectURI
-		pattern = strings.ReplaceAll(pattern, ".", `\.`)
-		pattern = strings.ReplaceAll(pattern, "/", `\/`)
-		pattern = strings.ReplaceAll(pattern, "*", `.*`)
-		re := regexp.MustCompile(`^` + pattern + `$`)
-		if !re.MatchString(callbackURL) {
-			slog.WarnContext(ctx, "redirect: invalid redirect_uri", "client_id", clientID, "redirect_uri", callbackURL)
-			http.Error(w, "Invalid redirect_uri parameter", http.StatusBadRequest)
-			return
-		}
+	}
+
+	// The redirect URI must match one of the client's registered redirect_uris —
+	// an exact URI, or an operator-provisioned "regexp:" pattern. Applies to every
+	// client type now that the legacy single-pattern redirect_uri column is gone.
+	if !redirectURIAllowed(oauth2Client.RedirectURIs, callbackURL) {
+		slog.WarnContext(ctx, "redirect: invalid redirect_uri", "client_id", clientID, "redirect_uri", callbackURL)
+		http.Error(w, "Invalid redirect_uri parameter", http.StatusBadRequest)
+		return
 	}
 
 	state := generateState()
