@@ -28,9 +28,11 @@ create table oauth2_sessions (
 create index oauth2_sessions_created_at_idx on oauth2_sessions (created_at);
 
 create table user_tokens (
-	token      string,
-	email      string      not null,
-	expires_at timestamptz not null,
-	created_at timestamptz not null default now(),
+	token             string,
+	email             string      not null,
+	expires_at        timestamptz not null,
+	created_at        timestamptz not null default now(),
+	scope_project_id  int,
+	scope_permissions string[],
 	primary key (token)
 );
