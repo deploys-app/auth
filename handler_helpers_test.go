@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 )
 
@@ -83,20 +84,11 @@ func TestMetadataHandler(t *testing.T) {
 	if meta.RegistrationEndpoint != "https://auth.test/register" {
 		t.Errorf("registration_endpoint = %q", meta.RegistrationEndpoint)
 	}
-	if !contains(meta.CodeChallengeMethodsSupported, "S256") {
+	if !slices.Contains(meta.CodeChallengeMethodsSupported, "S256") {
 		t.Errorf("code_challenge_methods_supported = %v, want S256", meta.CodeChallengeMethodsSupported)
 	}
-	if !contains(meta.TokenEndpointAuthMethodsSupported, "none") ||
-		!contains(meta.TokenEndpointAuthMethodsSupported, "client_secret_post") {
+	if !slices.Contains(meta.TokenEndpointAuthMethodsSupported, "none") ||
+		!slices.Contains(meta.TokenEndpointAuthMethodsSupported, "client_secret_post") {
 		t.Errorf("token_endpoint_auth_methods_supported = %v", meta.TokenEndpointAuthMethodsSupported)
 	}
-}
-
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
