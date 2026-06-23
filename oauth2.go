@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 
 	"github.com/acoshift/pgsql/pgctx"
 	"github.com/lib/pq"
@@ -66,13 +67,26 @@ func getOAuth2Client(ctx context.Context, clientID string) (*OAuth2Client, error
 	return &x, nil
 }
 
-// insertOAuth2Client persists a dynamically registered public client.
+// insertOAuth2Client persists a dynamically registered public client. It is
+// marked dynamically_registered so the cleanup worker may reap it when idle;
+// operator-seeded and confidential clients are inserted elsewhere and keep the
+// column's default of false (never reaped).
 func insertOAuth2Client(ctx context.Context, c *OAuth2Client) error {
 	_, err := pgctx.Exec(ctx, `
-		insert into oauth2_clients (id, secret, redirect_uris, token_endpoint_auth_method, client_name)
-		values ($1, null, $2, $3, $4)
+		insert into oauth2_clients (id, secret, redirect_uris, token_endpoint_auth_method, client_name, dynamically_registered)
+		values ($1, null, $2, $3, $4, true)
 	`, c.ID, pq.Array(c.RedirectURIs), c.TokenEndpointAuthMethod, c.ClientName)
 	return err
+}
+
+// touchClientLastUsed records that a client was just used (at authorize time),
+// so idle GC reaps by last use rather than creation age. Best-effort: a failure
+// must not break the login, so the error is logged and swallowed.
+func touchClientLastUsed(ctx context.Context, clientID string) {
+	_, err := pgctx.Exec(ctx, `update oauth2_clients set last_used_at = now() where id = $1`, clientID)
+	if err != nil {
+		slog.WarnContext(ctx, "touch client last_used_at", "error", err, "client_id", clientID)
+	}
 }
 
 func insertOAuth2Code(ctx context.Context, clientID, code string, c *OAuth2Code) error {

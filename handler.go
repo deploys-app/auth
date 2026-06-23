@@ -84,6 +84,9 @@ func (h RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Mark the client as used so idle GC reaps by last use, not creation age.
+	touchClientLastUsed(ctx, oauth2Client.ID)
+
 	state := generateState()
 	sessionID := generateSessionID()
 

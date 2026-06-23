@@ -50,6 +50,14 @@ the authorize and token endpoints, and may use loopback redirect URIs
 `client_secret` as before. A resource server validates issued bearer tokens via
 `/introspect` (authenticated with `INTROSPECTION_TOKEN`).
 
+`/register` mints a permanent public-client row, so it is **rate-limited per
+source IP** and dynamically-registered clients are **garbage-collected when idle**
+(reaped after 90 days with no authorize; `last_used_at` is stamped on every
+authorize, so a reused client never expires). Operator-seeded and confidential
+clients are never reaped. The deploys CLI ships a baked-in `deploys-cli` public
+client (seeded by `schema/05_seed_cli_client.sql`) so ordinary CLI logins skip
+`/register` entirely.
+
 ## Deployment
 
 The provided [Dockerfile](./Dockerfile) builds a `gcr.io/distroless/static`

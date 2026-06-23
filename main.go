@@ -5,9 +5,18 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/acoshift/pgsql/pgctx"
 	_ "github.com/lib/pq"
+)
+
+// maxRegistrationsPerWindow caps Dynamic Client Registration per source IP. It
+// is generous for any legitimate caller (the CLI registers at most once and then
+// reuses its cached client_id) while blunting bulk-registration abuse.
+const (
+	maxRegistrationsPerWindow = 20
+	registrationWindow        = time.Hour
 )
 
 func main() {
@@ -52,7 +61,10 @@ func main() {
 	mux.Handle("GET /revoke", RevokeHandler{}) // TODO: remove ?
 	mux.Handle("POST /revoke", RevokePostHandler{})
 	mux.Handle("POST /token", TokenHandler{})
-	mux.Handle("POST /register", RegisterHandler{BaseURL: baseURL})
+	mux.Handle("POST /register", RegisterHandler{
+		BaseURL: baseURL,
+		Limiter: newRegisterLimiter(maxRegistrationsPerWindow, registrationWindow),
+	})
 	mux.Handle("POST /introspect", IntrospectHandler{Token: introspectionToken})
 
 	http.ListenAndServe(":"+port, pgctx.Middleware(db)(mux))
