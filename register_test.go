@@ -62,8 +62,10 @@ func TestRegisterHandler_HTTPSRedirectAllowed(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
-	if n := countRows(t, ctx, "oauth2_clients"); n != 1 {
-		t.Errorf("oauth2_clients = %d, want 1", n)
+	// One client from this registration, plus the seeded deploys-cli fixture the
+	// migration always installs.
+	if n := countRows(t, ctx, "oauth2_clients"); n != 2 {
+		t.Errorf("oauth2_clients = %d, want 2 (1 registered + seeded deploys-cli)", n)
 	}
 }
 

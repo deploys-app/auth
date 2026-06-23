@@ -13,9 +13,22 @@ import (
 // CLIs use to obtain a client_id without manual provisioning.
 type RegisterHandler struct {
 	BaseURL string
+	// Limiter caps registrations per source IP. nil disables limiting (tests).
+	Limiter *registerLimiter
 }
 
 func (h RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.Limiter != nil && !h.Limiter.allow(clientIP(r)) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":             "too_many_requests",
+			"error_description": "registration rate limit exceeded; retry later",
+		})
+		return
+	}
+
 	var req struct {
 		ClientName              string   `json:"client_name"`
 		RedirectURIs            []string `json:"redirect_uris"`
