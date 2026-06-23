@@ -107,6 +107,33 @@ func TestIntrospectHandler_ExpiredToken(t *testing.T) {
 	}
 }
 
+func TestIntrospectHandler_ScopedTokenInactive(t *testing.T) {
+	t.Parallel()
+	tdb := newTestDB(t)
+	ctx := tdb.Ctx()
+	const raw = "deploys-api.scoped"
+	// A scoped token (non-null scope_project_id) is a narrowly-attenuated agent
+	// credential. Introspection drops the scope, so it must read as inactive —
+	// resolving it to its bare owner would promote it to the minter's full
+	// authority (a confused deputy).
+	if _, err := pgctxExec(t, ctx, `
+		insert into user_tokens (token, email, expires_at, scope_project_id, scope_permissions)
+		values ($1, $2, now() + interval '1 hour', $3, '{deployment.get}')
+	`, hashToken(raw), "agent@example.com", 42); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	IntrospectHandler{Token: "secret"}.ServeHTTP(rec, introspectReq(t, "Bearer secret", raw).WithContext(ctx))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if active := decodeActive(t, rec); active {
+		t.Error("active = true, want false for scoped token")
+	}
+}
+
 func TestIntrospectHandler_EmptyToken(t *testing.T) {
 	t.Parallel()
 	// Empty token short-circuits before any DB lookup.
