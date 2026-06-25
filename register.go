@@ -77,7 +77,7 @@ func (h RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"client_id_issued_at":        time.Now().Unix(),
 		"client_name":                req.ClientName,
 		"redirect_uris":              req.RedirectURIs,
-		"grant_types":                []string{"authorization_code"},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
 		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": "none",
 	}

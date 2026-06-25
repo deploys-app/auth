@@ -36,10 +36,10 @@ the service starts.
 | `GET` | `/.well-known/oauth-authorization-server` | OAuth 2.0 Authorization Server Metadata (RFC 8414) |
 | `GET` | `/` | Validate the OAuth2 client and redirect to Google (authorize endpoint; supports PKCE) |
 | `GET` | `/callback` | Receive Google's code and issue an internal auth code |
-| `POST` | `/token` | Exchange code (+ secret or PKCE verifier) for a user token |
+| `POST` | `/token` | Exchange code (+ secret or PKCE verifier) for a user token, or a refresh token for a fresh one |
 | `POST` | `/register` | Dynamic Client Registration for public clients (RFC 7591) |
 | `POST` | `/introspect` | Token introspection for resource servers (RFC 7662) |
-| `POST` | `/revoke` | Revoke a user token |
+| `POST` | `/revoke` | Revoke an access token or a refresh token by its value |
 
 ### MCP / public clients
 
@@ -49,6 +49,21 @@ the authorize and token endpoints, and may use loopback redirect URIs
 (`http://127.0.0.1:<port>`). Confidential web clients keep using
 `client_secret` as before. A resource server validates issued bearer tokens via
 `/introspect` (authenticated with `INTROSPECTION_TOKEN`).
+
+### Refresh tokens
+
+The access token issued at `/token` is short-lived (7 days). Public clients
+(CLI / MCP connector) also receive a **refresh token** and can exchange it for a
+fresh access token with `grant_type=refresh_token` (`client_id` +
+`refresh_token`), so a connector no longer breaks mid-session on expiry — it
+silently refreshes instead of forcing a full browser re-authorization.
+
+Refresh tokens are **single-use and rotating**: every refresh returns a new
+refresh token and invalidates the one presented (a replayed token is rejected
+with `invalid_grant`). They live in their own `refresh_tokens` table (never
+`user_tokens`), are bound to the issuing client, and have a longer, sliding TTL
+(30 days, reset on each use). Confidential web clients keep their cookie session
+and do not use this grant — they receive no refresh token.
 
 `/register` mints a permanent public-client row, so it is **rate-limited per
 source IP** and dynamically-registered clients are **garbage-collected when idle**

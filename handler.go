@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -296,9 +298,7 @@ func (RevokeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	hashedToken := hashToken(token)
-	_, err := pgctx.Exec(ctx, `delete from user_tokens where token = $1`, hashedToken)
-	if err != nil {
+	if err := revokeToken(ctx, hashToken(token)); err != nil {
 		slog.ErrorContext(ctx, "revoke: delete token", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -324,9 +324,7 @@ func (RevokePostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	hashedToken := hashToken(token)
-	_, err = pgctx.Exec(ctx, `delete from user_tokens where token = $1`, hashedToken)
-	if err != nil {
+	if err := revokeToken(ctx, hashToken(token)); err != nil {
 		slog.ErrorContext(ctx, "revoke: delete token", "error", err)
 		apiErrorResponse(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -337,9 +335,14 @@ func (RevokePostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type TokenHandler struct{}
 
 func (TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	grantType := r.PostFormValue("grant_type")
-	if grantType != "" && grantType != "authorization_code" {
-		oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code is supported")
+	switch r.PostFormValue("grant_type") {
+	case "refresh_token":
+		handleRefreshTokenGrant(w, r)
+		return
+	case "", "authorization_code":
+		// fall through to the authorization_code exchange below
+	default:
+		oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "unsupported grant_type")
 		return
 	}
 
@@ -417,25 +420,120 @@ func (TokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := generateToken()
-	hashedToken := hashToken(token)
-	err = insertToken(ctx, hashedToken, oauth2Code.Email)
+	err = insertToken(ctx, hashToken(token), oauth2Code.Email, tokenTTLSeconds)
 	if err != nil {
 		slog.ErrorContext(ctx, "token: insert token", "error", err)
 		oauthError(w, http.StatusInternalServerError, "server_error", "")
 		return
 	}
 
-	var resp struct {
+	// Public clients (CLI / MCP connector) get a real, rotating refresh token so
+	// they can silently refresh instead of forcing a full re-auth on expiry.
+	// Confidential clients (the web console) maintain their own cookie session and
+	// never use the refresh grant; the refresh_token field is echoed as the access
+	// token purely so the legacy web client keeps reading a non-empty value.
+	refreshToken := token
+	if oauth2Client.IsPublic() {
+		refreshToken = generateRefreshToken()
+		if err := insertRefreshToken(ctx, hashToken(refreshToken), oauth2Code.Email, clientID, refreshTokenTTLSeconds); err != nil {
+			slog.ErrorContext(ctx, "token: insert refresh token", "error", err)
+			oauthError(w, http.StatusInternalServerError, "server_error", "")
+			return
+		}
+	}
+
+	writeTokenResponse(w, token, refreshToken, tokenTTLSeconds)
+}
+
+// handleRefreshTokenGrant implements the RFC 6749 refresh_token grant. It rotates
+// the presented refresh token (single-use) and issues a fresh access/refresh
+// pair, so a client refreshing within the refresh-token window never needs a full
+// re-authorization.
+func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request) {
+	clientID := r.PostFormValue("client_id")
+	if clientID == "" {
+		oauthError(w, http.StatusBadRequest, "invalid_request", "missing client_id")
+		return
+	}
+	presented := r.PostFormValue("refresh_token")
+	if presented == "" {
+		oauthError(w, http.StatusBadRequest, "invalid_request", "missing refresh_token")
+		return
+	}
+
+	ctx := r.Context()
+	oauth2Client, err := getOAuth2Client(ctx, clientID)
+	if errors.Is(err, ErrOAuth2ClientNotFound) {
+		oauthError(w, http.StatusUnauthorized, "invalid_client", "unknown client_id")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "token: refresh: get oauth2 client", "error", err)
+		oauthError(w, http.StatusInternalServerError, "server_error", "")
+		return
+	}
+
+	// Confidential clients must still present their secret. Public clients are
+	// authenticated by possession of the single-use, client-bound refresh token
+	// itself — there is no PKCE on the refresh grant (no authorization code).
+	if !oauth2Client.IsPublic() {
+		clientSecret := r.PostFormValue("client_secret")
+		if clientSecret == "" {
+			oauthError(w, http.StatusBadRequest, "invalid_request", "missing client_secret")
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(clientSecret), []byte(oauth2Client.Secret)) != 1 {
+			oauthError(w, http.StatusUnauthorized, "invalid_client", "invalid client_secret")
+			return
+		}
+	}
+
+	// Rotate atomically: consume the old token and mint the new pair in one
+	// transaction. On any failure the transaction rolls back and the presented
+	// refresh token stays valid, so the client can simply retry.
+	var accessToken, newRefresh string
+	err = pgctx.RunInTx(ctx, func(ctx context.Context) error {
+		email, err := consumeRefreshToken(ctx, hashToken(presented), clientID)
+		if err != nil {
+			return err
+		}
+		accessToken = generateToken()
+		if err := insertToken(ctx, hashToken(accessToken), email, tokenTTLSeconds); err != nil {
+			return err
+		}
+		newRefresh = generateRefreshToken()
+		return insertRefreshToken(ctx, hashToken(newRefresh), email, clientID, refreshTokenTTLSeconds)
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		slog.WarnContext(ctx, "token: refresh: invalid refresh_token", "client_id", clientID)
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "invalid or expired refresh_token")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "token: refresh: rotate", "error", err)
+		oauthError(w, http.StatusInternalServerError, "server_error", "")
+		return
+	}
+
+	// Stamp last use so an actively-refreshing client is not reaped by idle GC,
+	// which otherwise only sees authorize-time activity.
+	touchClientLastUsed(ctx, clientID)
+
+	writeTokenResponse(w, accessToken, newRefresh, tokenTTLSeconds)
+}
+
+func writeTokenResponse(w http.ResponseWriter, accessToken, refreshToken string, expiresIn int) {
+	resp := struct {
 		AccessToken  string `json:"access_token"`
 		TokenType    string `json:"token_type"`
 		ExpiresIn    int    `json:"expires_in"`
 		RefreshToken string `json:"refresh_token"`
+	}{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    expiresIn,
+		RefreshToken: refreshToken,
 	}
-	resp.AccessToken = token
-	resp.TokenType = "Bearer"
-	resp.ExpiresIn = tokenTTLSeconds
-	resp.RefreshToken = token // retained for backward compatibility with the existing web client
-
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(resp)

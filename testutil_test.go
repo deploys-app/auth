@@ -90,12 +90,34 @@ func seedToken(t *testing.T, ctx context.Context, hashedToken, email string) {
 	}
 }
 
+// seedRefreshToken inserts a valid (non-expired) refresh token bound to clientID.
+func seedRefreshToken(t *testing.T, ctx context.Context, hashedToken, email, clientID string) {
+	t.Helper()
+	_, err := pgctx.Exec(ctx, `
+		insert into refresh_tokens (token, email, client_id, expires_at)
+		values ($1, $2, $3, now() + interval '30 days')
+	`, hashedToken, email, clientID)
+	if err != nil {
+		t.Fatalf("seed refresh token: %v", err)
+	}
+}
+
 // --- assertion helpers ---
 
 func tokenEmail(t *testing.T, ctx context.Context, hashedToken string) (string, bool) {
 	t.Helper()
 	var email string
 	err := pgctx.QueryRow(ctx, `select email from user_tokens where token = $1`, hashedToken).Scan(&email)
+	if err != nil {
+		return "", false
+	}
+	return email, true
+}
+
+func refreshTokenEmail(t *testing.T, ctx context.Context, hashedToken string) (string, bool) {
+	t.Helper()
+	var email string
+	err := pgctx.QueryRow(ctx, `select email from refresh_tokens where token = $1`, hashedToken).Scan(&email)
 	if err != nil {
 		return "", false
 	}

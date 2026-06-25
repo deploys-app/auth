@@ -33,6 +33,7 @@ func cleanupExpired(db *sql.DB) {
 	for _, q := range []string{
 		`delete from oauth2_sessions where created_at < now() - interval '1 hour'`,
 		`delete from oauth2_codes where created_at < now() - interval '1 hour'`,
+		`delete from refresh_tokens where expires_at < now()`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			slog.ErrorContext(ctx, "cleanup: delete expired rows", "error", err)

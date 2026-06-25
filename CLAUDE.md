@@ -42,8 +42,8 @@ This is a minimal OAuth2 authentication service for Deploys.app. It acts as an O
 |---|---|---|---|
 | `GET` | `/` | `RedirectHandler` | Validates the OAuth2 client and redirects the user to Google |
 | `GET` | `/callback` | `CallbackHandler` | Receives Google's code, exchanges it for an ID token, issues an internal auth code |
-| `POST` | `/token` | `TokenHandler` | Exchanges client credentials + internal code for a long-lived user token |
-| `POST` | `/revoke` | `RevokePostHandler` | Deletes a user token by its hash |
+| `POST` | `/token` | `TokenHandler` | Exchanges an auth code (`authorization_code`) or a refresh token (`refresh_token`) for an access token |
+| `POST` | `/revoke` | `RevokePostHandler` | Deletes an access or refresh token by its hash |
 
 ### Database access pattern
 
@@ -55,7 +55,8 @@ All DB logic lives in `oauth2.go` (session/code helpers) and `token.go` (token h
 
 - **OAuth2 sessions** (`oauth2_sessions`) — created by `RedirectHandler`, deleted on first read by `CallbackHandler`. 1-hour TTL enforced in the WHERE clause.
 - **OAuth2 codes** (`oauth2_codes`) — created by `CallbackHandler`, consumed atomically (DELETE … RETURNING) by `TokenHandler`. 1-hour TTL.
-- **User tokens** (`user_tokens`) — 7-day TTL, stored as SHA-256 hashes. Revoked by `RevokePostHandler`.
+- **User tokens** (`user_tokens`) — access tokens, 7-day TTL, stored as SHA-256 hashes. Revoked by `RevokePostHandler`.
+- **Refresh tokens** (`refresh_tokens`) — issued to public clients alongside the access token; single-use/rotating, client-bound, 30-day sliding TTL, stored as SHA-256 hashes. Exchanged for a fresh access token via `grant_type=refresh_token`. Kept out of `user_tokens` so they can never be used as an API bearer.
 
 ### Key decisions
 
