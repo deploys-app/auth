@@ -1,0 +1,27 @@
+name: Test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+# Branch commits are tested by pull_request. Limiting push to main avoids a
+# second run of the same commit, and a newer run cancels the one it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # cockroach-go starts one server per test and sizes it as a fraction of
+      # host RAM (--cache=0.1, --store=type=mem,size=0.20). A 4-core runner
+      # would otherwise start four of those at once. The suite takes about
+      # five minutes locally; 1200s leaves room for a cold binary download.
+      - run: go test ./... -parallel 2 -timeout 1200s
