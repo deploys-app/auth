@@ -1,6 +1,6 @@
 module github.com/deploys-app/auth
 
-go 1.27.0
+go 1.27.4
 
 require (
 	github.com/acoshift/pgsql v0.16.0
@@ -9,7 +9,7 @@ require (
 )
 
 require (
-	github.com/gofrs/flock v0.12.1 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	github.com/gofrs/flock v0.13.2 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
